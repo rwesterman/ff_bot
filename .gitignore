@@ -4,3 +4,4 @@ exports.sh
 run*
 build/
 dist/
+.idea/
