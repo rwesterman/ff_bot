@@ -6,7 +6,6 @@ import requests_mock
 
 from ff_bot.ff_bot import (GroupMeBot, GroupMeException, )
 
-
 class GroupMeBotTestCase(unittest.TestCase):
     '''Test GroupMeBot class'''
 
