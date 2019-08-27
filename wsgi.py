@@ -106,27 +106,27 @@ def initialize_bot():
 
 	return {"gm_bot": bot, "slack_bot": slack_bot, "discord_bot": discord_bot, "league": league}
 
+# Check if debug mode is set, and if so then default to debug groupme bot
+if os.getenv("DEBUG", False):
+	os.environ["ESPN_S2"] = "AECcqBAxkb6iztLdTzvhM6dSAdobKKCPuSY8DF3qSTGmjjVUtPZT8NSSv7KywiL569X2Ml8wZb0rxUNrUY%2F1ky%2FSzYlFigLbX%2FQZhA8D7nkkB752d9kMJmWO6B43%2FZFspi1tyvRPUPSciqK1A0hsYMI9HYyUa37MLrQFTbXrEcSwpb1%2BH0uwWdmm2%2BS2GZM04fjCWtC4GjuIgdBx%2FxE8VYOz6STEAPyGSn9RxDonMuDrCGHEljM1a1I2vi4m3eesI9Rmx%2FqH0kq0Sv7ybGL0YxHD"
+
+	os.environ["SWID"] = "{BFD1DF0E-01204EF1-A54E-128EAE53AA82}"
+
+	os.environ["BOT_ID"] = "d6b7111ac8a3b7da98aed334ed"
+
+	os.environ["LEAGUE_YEAR"] = "2018"
+
+	os.environ["LEAGUE_ID"] = "950634"
+
+# Initialize an instance of the chatbot and create a Commands instance for the bot
+init_dict = initialize_bot()
+commander = Commands(init_dict["gm_bot"], init_dict["league"])
+
+# Do scheduler initialization here
+init_scheduler()
+
 if __name__ == '__main__':
-	# Check if debug mode is set, and if so then default to debug groupme bot
-	if os.getenv("DEBUG", False):
-		os.environ["ESPN_S2"] = "AECcqBAxkb6iztLdTzvhM6dSAdobKKCPuSY8DF3qSTGmjjVUtPZT8NSSv7KywiL569X2Ml8wZb0rxUNrUY%2F1ky%2FSzYlFigLbX%2FQZhA8D7nkkB752d9kMJmWO6B43%2FZFspi1tyvRPUPSciqK1A0hsYMI9HYyUa37MLrQFTbXrEcSwpb1%2BH0uwWdmm2%2BS2GZM04fjCWtC4GjuIgdBx%2FxE8VYOz6STEAPyGSn9RxDonMuDrCGHEljM1a1I2vi4m3eesI9Rmx%2FqH0kq0Sv7ybGL0YxHD"
-
-		os.environ["SWID"] = "{BFD1DF0E-01204EF1-A54E-128EAE53AA82}"
-
-		os.environ["BOT_ID"] = "d6b7111ac8a3b7da98aed334ed"
-
-		os.environ["LEAGUE_YEAR"] = "2018"
-
-		os.environ["LEAGUE_ID"] = "950634"
-
-	# Initialize an instance of the chatbot and create a Commands instance for the bot
-	init_dict = initialize_bot()
-	commander = Commands(init_dict["gm_bot"], init_dict["league"])
-
-	# Do scheduler initialization here
-	init_scheduler()
-
-	# Run the flask app
+	# Run the flask app if this script is called directly
 	app.run()
 
 
