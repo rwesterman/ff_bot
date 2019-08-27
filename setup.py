@@ -1,9 +1,9 @@
 from setuptools import setup
 
 setup(
-    name='ff_bot',
+    name='utils',
 
-    packages=['ff_bot'],
+    packages=['utils'],
 
     include_package_data=True,
 
@@ -21,7 +21,7 @@ setup(
 
     tests_require=['nose', 'requests_mock'],
 
-    url='https://github.com/dtcarls/ff_bot',
+    url='https://github.com/dtcarls/utils',
 
     classifiers=[
         'Natural Language :: English',

@@ -4,8 +4,8 @@ import logging
 from ff_espn_api import League
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from ff_bot.bots import GroupMeBot, SlackBot, DiscordBot
-from commands import Commands
+from utils.bots import GroupMeBot, SlackBot, DiscordBot
+from utils.commands import Commands
 
 from flask import Flask, request
 

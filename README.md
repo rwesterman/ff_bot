@@ -47,7 +47,7 @@ python3 setup.py install
 
 ## Basic Usage
 
-This gives an overview of all the features of `ff_bot`
+This gives an overview of all the features of `utils`
 
 ### Environment Variables
 
@@ -96,7 +96,7 @@ Use BOT_ID if using Groupme, DISCORD_WEBHOOK_URL if using Discord, and SLACK_WEB
 ## Running the tests
 
 Automated tests for this package are included in the `tests` directory. After installation,
-you can run these tests by changing the directory to the `ff_bot` directory and running the following:
+you can run these tests by changing the directory to the `utils` directory and running the following:
 
 ```python3
 python3 setup.py test

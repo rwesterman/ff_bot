@@ -1,9 +1,13 @@
 from ff_espn_api import League
 from collections import defaultdict
 from statistics import mean, median
+from datetime import datetime
+import requests
 from pprint import pprint
-from ff_bot.bots import get_trophies
+# from utils.bots import get_trophies
 #League ID and year
+
+
 
 league_id = 950634
 # year = 2018
@@ -55,9 +59,6 @@ def get_last_place_team(league):
 	# pwr_ranks = league.power_rankings(league.current_week)
 	# print(pwr_ranks[-1][1].owner.split(" ")[0])
 
-def check_trophies(league, week):
-	trophies = get_trophies(league, week)
-	print(trophies)
 
 def check_box_scores(league, week):
 	box_score_list = league.box_scores(week)
@@ -66,9 +67,22 @@ def check_box_scores(league, week):
 		print("{}: {} -- {}: {}".format(matchup.home_team, matchup.home_score, matchup.away_team, matchup.away_score))
 	print()
 
+
 if __name__ == '__main__':
 	# calculate_overall_pwrs()
-	myleague = League(league_id, 2018, espn_s2, swid)
-	for i in range(1, 8):
+	myleague = League(league_id, 2019, espn_s2, swid)
+
+	teams = myleague.teams
+	print(teams)
+
+	owners = [team.owner for team in teams]
+	print(owners)
+	print(teams[0].roster)
+	# print(team.roster[0].playerId)
+	# print(team.roster[0].name)
+	# print(team.roster[0].posRank)
+	# response = requests.get("https://api.sleeper.app/v1/projections/nfl/regular/2019/1")
+	# print(response.json())
+	# for i in range(1, 8):
 		# check_trophies(myleague, i)
-		check_box_scores(myleague, i)
+		# check_box_scores(myleague, i)
