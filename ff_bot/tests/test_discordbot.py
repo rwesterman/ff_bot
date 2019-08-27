@@ -4,7 +4,7 @@ import unittest
 import requests_mock
 
 
-from ff_bot.ff_bot import (DiscordBot, DiscordException, )
+from ff_bot.bots import (DiscordBot, DiscordException, )
 
 
 class DiscordTestCase(unittest.TestCase):

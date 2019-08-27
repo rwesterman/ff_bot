@@ -2,7 +2,7 @@ from ff_espn_api import League
 from collections import defaultdict
 from statistics import mean, median
 from pprint import pprint
-from ff_bot.ff_bot import get_trophies
+from ff_bot.bots import get_trophies
 #League ID and year
 
 league_id = 950634

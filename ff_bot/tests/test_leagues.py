@@ -2,7 +2,7 @@ import unittest
 
 from ff_espn_api import League, Team
 # from ff_bot.ff_bot import (GroupMeBot, GroupMeException, )
-from ff_bot.ff_bot import get_power_rankings, get_last_place_team, get_close_scores, get_matchups, get_scoreboard, get_scoreboard_short, get_trophies
+from ff_bot.bots import get_power_rankings, get_last_place_team, get_close_scores, get_matchups, get_scoreboard, get_scoreboard_short, get_trophies
 
 
 class EspnTestCase(unittest.TestCase):
