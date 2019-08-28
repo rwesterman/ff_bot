@@ -73,22 +73,23 @@ if __name__ == '__main__':
 	from utils.players import Projections, SleeperPlayers
 
 	myleague = League(league_id, 2019, espn_s2, swid)
-	sleeper_players = SleeperPlayers()
-	projections = Projections(myleague.year, myleague.nfl_week)
-	projections.fetch_projs(myleague.nfl_week)
-
-	print(projections.all_projs)
+	# sleeper_players = SleeperPlayers()
+	# projections = Projections(myleague.year, myleague.nfl_week)
+	# projections.fetch_projs(myleague.nfl_week)
 	#
+	# print(projections.all_projs)
+	# #
 	# print(myleague.year)
 	# print(myleague.nfl_week)
 	#
-	#
-	# teams = myleague.teams
-	# print(teams)
-	#
-	# owners = [team.owner for team in teams]
-	# print(owners)
-	# print(teams[0].roster)
+
+	teams = myleague.teams
+	print(teams)
+
+	owners = [team.owner for team in teams]
+	print(owners)
+	print(teams[0].roster)
+	print(teams[0].team_name)
 	# print(team.roster[0].playerId)
 	# print(team.roster[0].name)
 	# print(team.roster[0].posRank)

@@ -216,6 +216,7 @@ class Commands:
 		return text
 
 	def get_team_projections(self, user_id):
+		"""Checks GroupMe ID of sender and returns the projections for their team"""
 		# Try to update player projections
 		self.projections.fetch_projs(self.league.nfl_week)
 
@@ -223,7 +224,7 @@ class Commands:
 		user_team_num = self.gm_id_to_team[int(user_id)]
 		user_team = self.league.teams[user_team_num]
 
-		text = "Projections for your players this week:\n\n"
+		text = "Projections for {}:\n\n".format(user_team.team_name)
 
 		for player in user_team.roster:
 			# player is a Player object
