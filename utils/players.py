@@ -46,7 +46,7 @@ class SleeperPlayers:
 	def populate_players(self):
 		"""Read in players.json file and populate all players into the two dictionaries"""
 
-		with open(os.path.join("..","players.json"), "r") as fp:
+		with open("players.json", "r") as fp:
 			player_json = json.load(fp)
 
 		for sleeper_id, player_attrs in player_json.items():
@@ -114,10 +114,11 @@ class Projections:
 	def fetch_projs(self, week):
 		"""Get projections for all players for a given week, and store these in the Projections object"""
 
-		# Check that projections weren't updated within the last day before fetching them again
-		if (not datetime.now() - self.projs_last_updated > timedelta(days=1)) and self.all_projs:
-			print("Projections already cached for the day!")
-			return
+		if self.all_projs:
+			# Check that projections weren't updated within the last day before fetching them again
+			if not (datetime.now() - self.projs_last_updated > timedelta(days=1)):
+				print("Projections already cached for the day!")
+				return
 
 		response = requests.get("https://api.sleeper.app/v1/projections/nfl/regular/{}/{}".format(self.year, week))
 		response.raise_for_status()

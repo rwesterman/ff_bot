@@ -114,7 +114,7 @@ if os.getenv("DEBUG", False):
 
 	os.environ["BOT_ID"] = "d6b7111ac8a3b7da98aed334ed"
 
-	os.environ["LEAGUE_YEAR"] = "2018"
+	os.environ["LEAGUE_YEAR"] = "2019"
 
 	os.environ["LEAGUE_ID"] = "950634"
 
@@ -127,6 +127,6 @@ init_scheduler()
 
 if __name__ == '__main__':
 	# Run the flask app if this script is called directly
-	app.run()
+	app.run(host="0.0.0.0", debug=True)
 
 

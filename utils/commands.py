@@ -6,6 +6,7 @@ class Commands:
 		self.league = league
 
 		self.sleeper_players = SleeperPlayers()
+
 		self.projections = Projections(self.league.year, self.league.nfl_week)
 
 		# A mapping from groupme user ID to team number
@@ -61,6 +62,7 @@ class Commands:
 		text += "/close - Returns close scores from this week's FF matchups\n"
 		text += "/pwr - Returns the power rankings for each team in the league\n"
 		text += "/trophies - Returns a list of various awards\n"
+		text += "/projections - Returns the projected points for each of your players this week\n"
 
 		return text
 
@@ -217,6 +219,7 @@ class Commands:
 		# Try to update player projections
 		self.projections.fetch_projs(self.league.nfl_week)
 
+		# Figure out which team is being referenced by checking the sender's ID
 		user_team_num = self.gm_id_to_team[int(user_id)]
 		user_team = self.league.teams[user_team_num]
 
@@ -225,9 +228,21 @@ class Commands:
 		for player in user_team.roster:
 			# player is a Player object
 			# Get the sleeper player object from the player's espn ID
-			sleeper_player = self.sleeper_players.espn_indexing[player.playerId]
-			player_proj = self.projections.all_projs[sleeper_player.sleeper_id]
-			text += "{} - {}\n".format(sleeper_player, player_proj.pts_half_ppr)
+			print("{} - {}".format(player.playerId, player.name))
+
+			if player.playerId < 0:
+				# Filter out negative espn player IDs (used for defences only)
+				continue
+
+			try:
+				# Catch any key errors that occur here
+				sleeper_player = self.sleeper_players.espn_indexing[player.playerId]
+				player_proj = self.projections.all_projs[str(sleeper_player.sleeper_id)]
+				text += "{} - {}\n".format(sleeper_player, player_proj.pts_half_ppr)
+			except KeyError:
+				# Handle the key error by saying here is no projection for the player
+				text += "{} - n/a\n".format(sleeper_player, player_proj.pts_half_ppr)
+
 
 		return text
 

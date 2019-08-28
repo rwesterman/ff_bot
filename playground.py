@@ -70,14 +70,25 @@ def check_box_scores(league, week):
 
 if __name__ == '__main__':
 	# calculate_overall_pwrs()
+	from utils.players import Projections, SleeperPlayers
+
 	myleague = League(league_id, 2019, espn_s2, swid)
+	sleeper_players = SleeperPlayers()
+	projections = Projections(myleague.year, myleague.nfl_week)
+	projections.fetch_projs(myleague.nfl_week)
 
-	teams = myleague.teams
-	print(teams)
-
-	owners = [team.owner for team in teams]
-	print(owners)
-	print(teams[0].roster)
+	print(projections.all_projs)
+	#
+	# print(myleague.year)
+	# print(myleague.nfl_week)
+	#
+	#
+	# teams = myleague.teams
+	# print(teams)
+	#
+	# owners = [team.owner for team in teams]
+	# print(owners)
+	# print(teams[0].roster)
 	# print(team.roster[0].playerId)
 	# print(team.roster[0].name)
 	# print(team.roster[0].posRank)
