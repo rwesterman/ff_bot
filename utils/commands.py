@@ -1,4 +1,5 @@
 from utils.players import Projections, SleeperPlayers
+import datetime
 
 class Commands:
 	def __init__(self, gm_bot, league):
@@ -82,13 +83,19 @@ class Commands:
 
 	def get_scoreboard_short(self, final=False):
 		# Gets current week's scoreboard
-		if not final:
-			matchups = self.league.scoreboard()
+
+		# Make sure the "current week" hasn't been updated through ESPN yet. The edge case here will be Monday nights I believe
+		if datetime.datetime.today().weekday() in [0,1,2] and self.league.current_week > 0:
+			week = self.league.current_week - 1
 		else:
-			matchups = self.league.scoreboard(week=self.league.current_week)
-		score = ['%s %.2f - %.2f %s' % (i.home_team.team_abbrev, i.home_score,
-		                                i.away_score, i.away_team.team_abbrev) for i in matchups
-		         if i.away_team]
+			week = self.league.current_week
+
+		# Pull scores from scoreboard
+		matchups = self.league.scoreboard(week=week)
+
+		score = ['%s %.2f - %.2f %s' % (i.home_team.team_abbrev, i.home_score, i.away_score, i.away_team.team_abbrev)
+		         for i in matchups if i.away_team]
+
 		text = ['Score Update'] + score
 		return '\n'.join(text)
 
@@ -143,8 +150,14 @@ class Commands:
 
 	def get_trophies(self, week=None):
 		# Gets trophies for highest score, lowest score, closest score, and biggest win
-		if not week:
-			week = self.power_rankings_week()
+		# if not week:
+		# 	week = self.power_rankings_week()
+
+		if datetime.datetime.today().weekday() in [0,1,2] and self.league.current_week > 0:
+			week = self.league.current_week - 1
+		else:
+			week = self.league.current_week
+
 		matchups = self.league.scoreboard(week=week)
 		low_score = 9999
 		low_team_name = ''
