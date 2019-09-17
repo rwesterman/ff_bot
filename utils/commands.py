@@ -85,7 +85,7 @@ class Commands:
 		if not final:
 			matchups = self.league.scoreboard()
 		else:
-			matchups = self.league.scoreboard(week=self.power_rankings_week())
+			matchups = self.league.scoreboard(week=self.league.current_week)
 		score = ['%s %.2f - %.2f %s' % (i.home_team.team_abbrev, i.home_score,
 		                                i.away_score, i.away_team.team_abbrev) for i in matchups
 		         if i.away_team]
