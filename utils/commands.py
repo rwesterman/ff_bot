@@ -23,6 +23,8 @@ class Commands:
 							577750 : 8,
 							399917 : 9}
 
+		self.last_message = ""
+
 	def parse(self, gm_data):
 		# Receives groupme data (name of sender, content of message, etc) as json
 
@@ -32,6 +34,7 @@ class Commands:
 		text = ''
 		if not cmd_word.startswith("/"):
 			# If the first word of a message doesn't start with a "/", then it isn't a command
+			self.last_message = gm_data['text']
 			return None
 		elif cmd_word == "/help":
 			text = self.commands_help()
@@ -51,6 +54,8 @@ class Commands:
 			text = self.get_final()
 		elif cmd_word == "/projections":
 			text = self.get_team_projections(gm_data["sender_id"])
+		elif cmd_word == "/mock":
+			text = self.mock_user()
 		else:
 			text = "Sorry, {} is not a valid command.".format(cmd_word)
 
@@ -217,7 +222,7 @@ class Commands:
 		else:
 			last_place_team = self.get_last_place_team()
 			blowout_str = [
-				"No teams were destroyed this week. (Good job {}!)".format(last_place_team.owner.split(" ")[0]), ""]
+				"No teams were destroyed this week. (Good job {}!)".format(last_place_team.owner.split(" ")[0].title()), ""]
 
 		text = ['Trophies of the week:'] + low_score_str + high_score_str + close_score_str + blowout_str
 		return '\n'.join(text)
@@ -260,6 +265,50 @@ class Commands:
 
 		return text
 
+	def mock_user(self):
+		msg_list = self.last_message.lower().split(" ")
+		mock_msg_list = []
+		punctuation = {",", "'", '"', "-", ":", ";", "!", "@", "#", "$", "%", "&"}
+		for word in msg_list:
+			mock_word = ""
+			punctuation_offset = 0
+			for idx, letter in enumerate(word):
+				if letter in punctuation:
+					punctuation_offset += 1
+
+				idx -= punctuation_offset
+
+				if idx % 2 != 0:
+					letter = letter.upper()
+				mock_word += letter
+			mock_msg_list.append(mock_word)
+
+		return " ".join(mock_msg_list)
+
+
 
 	def send_message(self, text):
 		self.gm_bot.send_message(text)
+
+
+if __name__ == '__main__':
+
+	msg_list = "Look guys I'm just saying...".lower().split(" ")
+	mock_msg_list = []
+	# Offset index by number of punctuation characters so that punctuation doesn't interfere with capitalization of letters
+	punctuation = {",", "'", '"', "-", ":", ";", "!", "@", "#", "$", "%", "&"}
+	for word in msg_list:
+		mock_word = ""
+		punctuation_offset = 0
+		for idx, letter in enumerate(word):
+			if letter in punctuation:
+				punctuation_offset += 1
+
+			idx -= punctuation_offset
+
+			if idx % 2 != 0:
+				letter = letter.upper()
+			mock_word += letter
+		mock_msg_list.append(mock_word)
+
+	print(" ".join(mock_msg_list))
