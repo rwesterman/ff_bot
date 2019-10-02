@@ -35,6 +35,7 @@ class Commands:
 		if not cmd_word.startswith("/"):
 			# If the first word of a message doesn't start with a "/", then it isn't a command
 			self.last_message = gm_data['text']
+			print("Last message is: {}".format(self.last_message))
 			return None
 		elif cmd_word == "/help":
 			text = self.commands_help()
