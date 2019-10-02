@@ -56,6 +56,7 @@ class Commands:
 		elif cmd_word == "/projections":
 			text = self.get_team_projections(gm_data["sender_id"])
 		elif cmd_word == "/mock":
+			print("Mocking previous message: {}".format(self.last_message))
 			text = self.mock_user()
 		else:
 			text = "Sorry, {} is not a valid command.".format(cmd_word)
