@@ -70,19 +70,6 @@ class Commands:
 
 		return text
 
-	# def power_rankings_week(self):
-	# 	count = 1
-	# 	first_team = next(iter(self.league.teams or []), None)
-	# 	# Iterate through the first team's scores until you reach a week with 0 points scored
-	# 	for o in first_team.scores:
-	# 		if o == 0:
-	# 			if count != 1:
-	# 				count = count - 1
-	# 			break
-	# 		else:
-	# 			count = count + 1
-
-	# 	return count
 
 	def get_scoreboard_short(self, week=None):
 		#Gets current week's scoreboard
@@ -112,8 +99,8 @@ class Commands:
 	def get_projected_scoreboard(self, week=None):
 		#Gets current week's scoreboard projections
 		box_scores = self.league.box_scores(week=week)
-		score = ['%s %.2f - %.2f %s' % (i.home_team.team_abbrev, get_projected_total(i.home_lineup),
-										get_projected_total(i.away_lineup), i.away_team.team_abbrev) for i in box_scores
+		score = ['%s %.2f - %.2f %s' % (i.home_team.team_abbrev, self.get_projected_total(i.home_lineup),
+										self.get_projected_total(i.away_lineup), i.away_team.team_abbrev) for i in box_scores
 				if i.away_team]
 		text = ['Approximate Projected Scores'] + score
 		return '\n'.join(text)
@@ -136,7 +123,7 @@ class Commands:
 		for i in matchups:
 			if i.away_team:
 				diffScore = i.away_score - i.home_score
-				if ( -16 < diffScore <= 0 and not all_played(i.away_lineup)) or (0 <= diffScore < 16 and not all_played(i.home_lineup)):
+				if ( -16 < diffScore <= 0 and not self.all_played(i.away_lineup)) or (0 <= diffScore < 16 and not self.all_played(i.home_lineup)):
 					score += ['%s %.2f - %.2f %s' % (i.home_team.team_abbrev, i.home_score,
 							i.away_score, i.away_team.team_abbrev)]
 		if not score:
@@ -236,8 +223,9 @@ class Commands:
 		return '\n'.join(text)
 
 	def get_final(self):
-		text = "Final " + self.get_scoreboard_short(True)
-		text = text + "\n\n" + self.get_trophies(self.league)
+		week = self.league.current_week - 1
+		text = "Final " + self.get_scoreboard_short(week=week)
+		text = text + "\n\n" + self.get_trophies(week=week)
 
 		return text
 

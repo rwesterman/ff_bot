@@ -19,9 +19,5 @@ class EspnTestCase(unittest.TestCase):
         # self.test_bot = GroupMeBot("d6b7111ac8a3b7da98aed334ed")
         # self.test_text = "This is a test."
 
-    def test_get_last_place_team(self):
-        '''Does the last place team's owner return correctly?'''
-        self.assertEqual(get_last_place_team(self.league).owner, "Carter Axelsen")
-
     def test_get_trophies(self):
         print(get_trophies(self.league))
