@@ -35,6 +35,7 @@ class Commands:
 			"/trophies": self.get_trophies,
 			"/final": self.get_final,
 			"/projections": self.get_projected_scoreboard,
+			"/standings": self.get_standings,
 			"/mock": self.mock_user,
 		}
 		
@@ -89,6 +90,18 @@ class Commands:
 				else:
 					total_projected += i.projected_points
 		return total_projected
+
+	def get_standings(self, week=None):
+		matchups = self.league.box_scores(week=week)
+
+		standings = [(i.home_team.standing, i.home_team.team_name, i.home_team.wins, i.home_team.losses) for i in matchups] + \
+					[(i.away_team.standing, i.away_team.team_name, i.away_team.wins, i.away_team.losses) for i in matchups if i.away_team]
+
+		standings = sorted(standings, key=lambda tup: tup[0])
+		standings_txt = [f"{pos}: {team_name} ({wins} - {losses})" for pos, team_name, wins, losses in standings]
+		text = ["Current Standings:"] + standings_txt
+
+		return "\n".join(text)
 
 	def all_played(self, lineup):
 		for i in lineup:
