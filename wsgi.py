@@ -1,7 +1,7 @@
 import os
 import logging
 
-from ff_espn_api import League
+from espn_api.football import League
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from utils.bots import GroupMeBot, SlackBot, DiscordBot
@@ -40,7 +40,7 @@ def init_scheduler():
 	Schedule the chatbot to report scores/matchups/etc at particular times
 	:return:
 	"""
-	ff_start_date = os.getenv("START_DATE", '2019-09-04')
+	ff_start_date = os.getenv("START_DATE", '2020-09-10')
 	ff_end_date = os.getenv("END_DATE", '2019-12-30')
 
 	my_timezone = os.getenv("TIMEZONE",'America/New_York')
@@ -115,7 +115,7 @@ if os.getenv("DEBUG", False):
 
 	os.environ["BOT_ID"] = "d6b7111ac8a3b7da98aed334ed"
 
-	os.environ["LEAGUE_YEAR"] = "2019"
+	os.environ["LEAGUE_YEAR"] = "2020"
 
 	os.environ["LEAGUE_ID"] = "950634"
 

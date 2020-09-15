@@ -4,4 +4,7 @@ exports.sh
 run*
 build/
 dist/
-.idea/
+venv/
+.venv/
+env/
+*.zip

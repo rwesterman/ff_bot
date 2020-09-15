@@ -1,8 +1,13 @@
-[![Build Status](https://travis-ci.org/dtcarls/ff_bot.svg?branch=master)](https://travis-ci.org/dtcarls/ff_bot)
+[![Build Status](https://travis-ci.org/dtcarls/fantasy_football_chat_bot.svg?branch=master)](https://travis-ci.org/dtcarls/fantasy_football_chat_bot)
 [![Come join the chat](https://badges.gitter.im/dtcarls/Lobby.svg)](https://gitter.im/dtcarls/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/d8506396005d48d1a52dee114f2c05ae)](https://www.codacy.com/app/dtcarls/ff_bot?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=dtcarls/ff_bot&amp;utm_campaign=Badge_Grade)
 
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy)
+Like the bot? Star the repository and consider making a donation to buy me a coffee
+------
+[![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=ZDLFECJVGG6RG&currency_code=USD&source=url)
+* BTC: 3C8SEcDh52iDSYQY55kwELrNWoQRMkXLCR
+* ETH: 0xA098c4e8CC1c12422d5B34d6454133190CDdCAC3
+* LTC: MHx74YbrHE592ePBbdQ4cL9ZQC15xaAjtM
 
 # ESPN Fantasy Football GroupMe Slack and Discord Chat Bot
 
@@ -18,89 +23,6 @@ ESPN Fantasy Football information to a GroupMe, Discord or Slack chat room.
 - Power rankings - Tue -18:30 local time
 - Matchups - Thu - 19:30 east coast time (Upcoming matchups)
 - Scoreboard - Sun - 16:00, 20:00 east coast time (Current ESPN fantasy scoreboard)
-
-## Getting Started
-
-These instructions will get you a copy of the project up and running
-on your local machine for development and testing purposes.
-
-### Installing for development
-With Docker:
-```bash
-git clone https://github.com/dtcarls/ff_bot
-
-cd ff_bot
-
-docker build -t ff_bot .
-```
-
-Without Docker:
-
-```bash
-git clone https://github.com/dtcarls/ff_bot
-
-cd ff_bot
-
-python3 setup.py install
-```
-
-
-## Basic Usage
-
-This gives an overview of all the features of `utils`
-
-### Environment Variables
-
-- BOT_ID: This is your Bot ID from the GroupMe developers page (REQUIRED IF USING GROUPME)
-- SLACK_WEBHOOK_URL: This is your Webhook URL from the Slack App page (REQUIRED IF USING SLACK)
-- DISCORD_WEBHOOK_URL: This is your Webhook URL from the Discord Settings page (REQUIRED IF USING DISCORD)
-- LEAGUE_ID: This is your ESPN league id (REQUIRED)
-- START_DATE: This is when the bot will start paying attention and sending messages to your chat. (2019-09-04 by default)
-- END_DATE: This is when the bot will stop paying attention and stop sending messages to your chat. (2019-12-30 by default)
-- LEAGUE_YEAR: ESPN League year to look at (2019 by default)
-- TIMEZONE: The timezone that the messages will look to send in. (America/New_York by default)
-- INIT_MSG: The message that the bot will say when it is started (“Hi” by default, can be blank for no message)
-- ESPN_S2: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation
-- SWID: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation
-
-### Running with Docker
-
-Use BOT_ID if using Groupme, DISCORD_WEBHOOK_URL if using Discord, and SLACK_WEBHOOK_URL if using Slack (or multiple to get messages in multiple places)
-
-```bash
->>> export BOT_ID=[enter your GroupMe Bot ID]
->>> export WEBHOOK_URL=[enter your Webhook URL]
->>> export LEAGUE_ID=[enter ESPN league ID]
->>> export LEAGUE_YEAR=[enter league year]
->>> cd ff_bot
->>> docker run --rm=True \
--e BOT_ID=$BOT_ID \
--e LEAGUE_ID=$LEAGUE_ID \
--e LEAGUE_YEAR=$LEAGUE_YEAR \
-ff_bot
-```
-
-### Running without Docker
-
-Use BOT_ID if using Groupme, DISCORD_WEBHOOK_URL if using Discord, and SLACK_WEBHOOK_URL if using Slack (or multiple to get messages in multiple places)
-
-```bash
->>> export BOT_ID=[enter your GroupMe Bot ID]
->>> export WEBHOOK_URL=[enter your Webhook URL]
->>> export LEAGUE_ID=[enter ESPN league ID]
->>> export LEAGUE_YEAR=[enter league year]
->>> cd ff_bot
->>> python3 ff_bot/ff_bot.py
-```
-
-## Running the tests
-
-Automated tests for this package are included in the `tests` directory. After installation,
-you can run these tests by changing the directory to the `utils` directory and running the following:
-
-```python3
-python3 setup.py test
-```
 
 ## Setting up GroupMe, Discord, or Slack, and deploying app in Heroku
 
@@ -215,13 +137,15 @@ Note: App will restart when you change any variable so your chat room may be sem
 - SLACK_WEBHOOK_URL: This is your Webhook URL from the Slack App page (REQUIRED IF USING SLACK)
 - DISCORD_WEBHOOK_URL: This is your Webhook URL from the Discord Settings page (REQUIRED IF USING DISCORD)
 - LEAGUE_ID: This is your ESPN league id (REQUIRED)
-- START_DATE: This is when the bot will start paying attention and sending messages to your chat. (2019-09-04 by default)
-- END_DATE: This is when the bot will stop paying attention and stop sending messages to your chat. (2019-12-30 by default)
-- LEAGUE_YEAR: ESPN League year to look at (2019 by default)
+- START_DATE: This is when the bot will start paying attention and sending messages to your chat. (2020-09-10 by default)
+- END_DATE: This is when the bot will stop paying attention and stop sending messages to your chat. (2020-12-30 by default)
+- LEAGUE_YEAR: ESPN League year to look at (2020 by default)
 - TIMEZONE: The timezone that the messages will look to send in. (America/New_York by default)
 - INIT_MSG: The message that the bot will say when it is started (“Hi” by default, can be blank for no message)
 - ESPN_S2: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation
 - SWID: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation
+- ESPN_USERNAME: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation **Experimental, currently not working**
+- ESPN_PASSWORD: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation **Experimental, currently not working**
 
 After you have setup your variables you will need to turn it on. Navigate to the "Resources" tab of your Heroku app Dashboard.
 You should see something like below. Click the pencil on the right and toggle the buton so it is blue like depicted and click "Confirm."
@@ -232,42 +156,117 @@ You're done! You now have a fully featured GroupMe/Slack/Discord chat bot for ES
 Unfortunately to do auto deploys of the latest version you need admin access to the repository on git. You can check for updates on the github page (https://github.com/dtcarls/ff_bot/commits/master) and click the deploy button again; however, this will deploy a new instance and the variables will need to be edited again.
 
 #### Private Leagues
-For private league you will need to get your swid and espn_s2.  
-You can find these two values after logging into your espn fantasy football account on espn's website.  
-(Chrome Browser)   
-Right click anywhere on the website and click inspect option.  
-From there click Application on the top bar. 
-On the left under Storage section click Cookies then http://fantasy.espn.com.   
-From there you should be able to find your swid and espn_s2 variables and values.  
+For private league you will need to get your swid and espn_s2.
+You can find these two values after logging into your espn fantasy football account on espn's website.
+(Chrome Browser)
+Right click anywhere on the website and click inspect option.
+From there click Application on the top bar.
+On the left under Storage section click Cookies then http://fantasy.espn.com.
+From there you should be able to find your swid and espn_s2 variables and values.
+
+There is a new **Experimental (may not work)** option to use a username and password for espn to access private leagues instead of having to use swid and s2.
 
 ## Troubleshooting / FAQ
 
 **League must be full.**
 
-The bot isn't working  
-Did you miss a step in the instructions? Try doing it from scratch again. If still no luck, post here so the answer can be shared with others.
+The bot isn't working
+Did you miss a step in the instructions? Try doing it from scratch again. If still no luck, open an issue (https://github.com/dtcarls/fantasy_football_chat_bot/issues) so the answer can be shared with others.
 
-How are power ranks calculated?  
+How are power ranks calculated?
 They are calculated using 2 step dominance, as well as a combination of points scored and margin of victory. Weighted 80/15/5 respectively. I wouldn't so much pay attention to the actual number but more of the gap between teams. Full source of the calculations can be seen here: https://github.com/cwendt94/ff-espn-api/commit/61f8a34de5c42196ba0b1552aa25282297f070c5
 
-Is there a version of this for Yahoo/CBS/NFL/[insert other site]?  
+Is there a version of this for Yahoo/CBS/NFL/[insert other site]?
 No, this would require a significant rework for other sites.
 
-I'm not getting the init message  
+I'm not getting the init message
 Are you sure you flipped the switch in Heroku to activate the worker (the toggle should be blue)? The other common mistake is misconfigured environment variables.
 
-I keep getting the init message  
+I keep getting the init message
 Remove your init message and it will stop. The init message is really for first setup to ensure it is working.
 
-How do I set another timezone?  
+How do I set another timezone?
 Specify your variable https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List
 
-Is there a version of this for Messenger/WhatsApp/[insert other chat]?  
+Is there a version of this for Messenger/WhatsApp/[insert other chat]?
 No, but I am open to pull requests implementing their API for additional cross platform support.
 
-Like the bot? Star the repository and consider making a donation to buy me a coffee
-------
-[![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=ZDLFECJVGG6RG&currency_code=USD&source=url)
-* BTC: 3C8SEcDh52iDSYQY55kwELrNWoQRMkXLCR
-* ETH: 0xA098c4e8CC1c12422d5B34d6454133190CDdCAC3
-* LTC: MHx74YbrHE592ePBbdQ4cL9ZQC15xaAjtM
+## Getting Started for development and testing
+
+These instructions will get you a copy of the project up and running
+on your local machine for development and testing purposes.
+
+### Installing for development
+With Docker:
+```bash
+git clone https://github.com/dtcarls/ff_bot
+
+cd ff_bot
+
+docker build -t ff_bot .
+```
+
+Without Docker:
+
+```bash
+git clone https://github.com/dtcarls/ff_bot
+
+cd ff_bot
+
+python3 setup.py install
+```
+
+### Environment Variables
+
+- BOT_ID: This is your Bot ID from the GroupMe developers page (REQUIRED IF USING GROUPME)
+- SLACK_WEBHOOK_URL: This is your Webhook URL from the Slack App page (REQUIRED IF USING SLACK)
+- DISCORD_WEBHOOK_URL: This is your Webhook URL from the Discord Settings page (REQUIRED IF USING DISCORD)
+- LEAGUE_ID: This is your ESPN league id (REQUIRED)
+- START_DATE: This is when the bot will start paying attention and sending messages to your chat. (2020-09-10 by default)
+- END_DATE: This is when the bot will stop paying attention and stop sending messages to your chat. (2020-12-30 by default)
+- LEAGUE_YEAR: ESPN League year to look at (2020 by default)
+- TIMEZONE: The timezone that the messages will look to send in. (America/New_York by default)
+- INIT_MSG: The message that the bot will say when it is started (“Hi” by default, can be blank for no message)
+- ESPN_S2: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation
+- SWID: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation
+- ESPN_USERNAME: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation **Experimental, currently not working**
+- ESPN_PASSWORD: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation **Experimental, currently not working**
+
+### Running with Docker
+
+Use BOT_ID if using Groupme, DISCORD_WEBHOOK_URL if using Discord, and SLACK_WEBHOOK_URL if using Slack (or multiple to get messages in multiple places)
+
+```bash
+>>> export BOT_ID=[enter your GroupMe Bot ID]
+>>> export WEBHOOK_URL=[enter your Webhook URL]
+>>> export LEAGUE_ID=[enter ESPN league ID]
+>>> export LEAGUE_YEAR=[enter league year]
+>>> cd ff_bot
+>>> docker run --rm=True \
+-e BOT_ID=$BOT_ID \
+-e LEAGUE_ID=$LEAGUE_ID \
+-e LEAGUE_YEAR=$LEAGUE_YEAR \
+ff_bot
+```
+
+### Running without Docker
+
+Use BOT_ID if using Groupme, DISCORD_WEBHOOK_URL if using Discord, and SLACK_WEBHOOK_URL if using Slack (or multiple to get messages in multiple places)
+
+```bash
+>>> export BOT_ID=[enter your GroupMe Bot ID]
+>>> export WEBHOOK_URL=[enter your Webhook URL]
+>>> export LEAGUE_ID=[enter ESPN league ID]
+>>> export LEAGUE_YEAR=[enter league year]
+>>> cd ff_bot
+>>> python3 ff_bot/ff_bot.py
+```
+
+### Running the tests
+
+Automated tests for this package are included in the `tests` directory. After installation,
+you can run these tests by changing the directory to the `ff_bot` directory and running the following:
+
+```python3
+python3 setup.py test
+```

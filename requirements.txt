@@ -8,7 +8,6 @@ chardet==3.0.4
 Click==7.0
 colorama==0.4.1
 cryptography==2.7
-ff-espn-api==1.0.10
 flake8==3.3.0
 Flask==1.1.1
 gunicorn==19.9.0
@@ -39,3 +38,6 @@ Werkzeug==0.15.5
 win-inet-pton==1.1.0
 wincertstore==0.2
 zipp==0.5.2
+apscheduler>=3.3.0
+requests>=2.0.0,<3.0.0
+espn_api>=0.5.1
