@@ -92,16 +92,44 @@ class Commands:
 		return total_projected
 
 	def get_standings(self, week=None):
-		matchups = self.league.box_scores(week=week)
+		teams = self.league.teams
 
-		standings = [(i.home_team.standing, i.home_team.team_name, i.home_team.wins, i.home_team.losses) for i in matchups] + \
-					[(i.away_team.standing, i.away_team.team_name, i.away_team.wins, i.away_team.losses) for i in matchups if i.away_team]
+		top_half_totals = {t.team_name: 0 for t in teams}
+		if not week:
+			week = self.league.current_week
+		for w in range(1, week):
+			top_half_totals = self.top_half_wins(top_half_totals, w)
 
-		standings = sorted(standings, key=lambda tup: tup[0])
-		standings_txt = [f"{pos}: {team_name} ({wins} - {losses})" for pos, team_name, wins, losses in standings]
+		standings = []
+		for t in teams:
+			wins = top_half_totals[t.team_name] + t.wins
+			standings.append((wins, t.losses, t.team_name))
+
+		standings = sorted(standings, key=lambda tup: tup[0], reverse=True)
+		standings_txt = [f"{pos + 1}: {team_name} ({wins} - {losses}) (+{top_half_totals[team_name]})" for \
+		 pos, (wins, losses, team_name) in enumerate(standings)]
 		text = ["Current Standings:"] + standings_txt
 
 		return "\n".join(text)
+
+	def top_half_wins(self, top_half_totals, week):
+		# Todo: Consider caching the scores for earlier weeks so this only has to be run once per day
+		box_scores = self.league.box_scores(week=week)
+		
+		scores = [(i.home_score, i.home_team.team_name) for i in box_scores] + \
+				[(i.away_score, i.away_team.team_name) for i in box_scores if i.away_team]
+
+		scores = sorted(scores, key=lambda tup: tup[0], reverse=True)
+
+		for idx in range(0, len(scores)//2):
+			points, team_name = scores[idx]
+			top_half_totals[team_name] += 1
+
+		return top_half_totals
+
+			
+
+		pass
 
 	def all_played(self, lineup):
 		for i in lineup:
