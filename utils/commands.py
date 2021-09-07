@@ -127,9 +127,6 @@ class Commands:
 
 		return top_half_totals
 
-			
-
-		pass
 
 	def all_played(self, lineup):
 		for i in lineup:
@@ -321,7 +318,6 @@ class Commands:
 			mock_msg_list.append(mock_word)
 
 		return " ".join(mock_msg_list)
-
 
 
 	def send_message(self, text):
