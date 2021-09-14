@@ -63,6 +63,7 @@ class Commands:
 	def commands_help(self):
 		text = "You can use the following commands:\n"
 		text += "/matchups - Returns this week's matchups\n"
+		text += "/standings - Returns the overall league standings\n"
 		text += "/scores - Returns this week's scores\n"
 		text += "/close - Returns close scores from this week's FF matchups\n"
 		text += "/pwr - Returns the power rankings for each team in the league\n"
@@ -103,11 +104,38 @@ class Commands:
 		standings = []
 		for t in teams:
 			wins = top_half_totals[t.team_name] + t.wins
-			standings.append((wins, t.losses, t.team_name))
-
+			standings.append((wins, t.losses, t.team_name, t.points_for))
+		# Sort standings based on total wins
 		standings = sorted(standings, key=lambda tup: tup[0], reverse=True)
+
+		def break_ties(sorted_standings):
+			# Break ties using total Points For
+			resorted_standings = []
+			curr_wins = -1
+			win_group = []
+			for team_stats in sorted_standings:
+				team_wins = team_stats[0]
+				if team_wins == curr_wins:
+					win_group.append(team_stats)
+				else:
+					# If we've reached the end of a win group,
+					# Add the existing group and create a new one
+					resorted_standings.append(win_group)
+					curr_wins = team_wins
+					win_group = [team_stats]
+
+			# Append last win group since it won't be added in for loop
+			resorted_standings.append(win_group)
+		
+			# Now sort internal lists and flatten
+			flattened_standings = []
+			for win_group in resorted_standings:
+				flattened_standings.extend(sorted(win_group, key=lambda x: x[3], reverse=True))
+			return flattened_standings
+
+		standings = break_ties(standings)
 		standings_txt = [f"{pos + 1}: {team_name} ({wins} - {losses}) (+{top_half_totals[team_name]})" for \
-		 pos, (wins, losses, team_name) in enumerate(standings)]
+		 pos, (wins, losses, team_name, pf) in enumerate(standings)]
 		text = ["Current Standings:"] + standings_txt
 
 		return "\n".join(text)
