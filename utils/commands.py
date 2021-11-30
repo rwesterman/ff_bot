@@ -6,10 +6,6 @@ class Commands:
 		self.gm_bot = gm_bot
 		self.league = league
 
-		# self.sleeper_players = SleeperPlayers()
-
-		# self.projections = Projections(self.league.year, self.league.nfl_week)
-
 		# A mapping from groupme user ID to team number
 		self.gm_id_to_team = {
 							11847036 : 0,
@@ -92,6 +88,43 @@ class Commands:
 					total_projected += i.projected_points
 		return total_projected
 
+
+	def _break_ties(self, sorted_standings):
+		# TODO: Consider implementing this recursively. Would need to pass in sort order, sort index, tiebreaker index
+		"""
+		Standings are determined in the following order:
+		1) Most wins
+		2) Least losses
+		3) Most 'Points For'
+
+		Input standings should already be sorted by most wins, so this function
+		breaks ties by least losses and then remaining ties by Points For
+		"""
+		resorted_standings = []
+		curr_wins = -1
+		win_group = []
+		# Group teams by number of wins
+		for team_stats in sorted_standings:
+			team_wins = team_stats[0]
+			if team_wins == curr_wins:
+				win_group.append(team_stats)
+			else:
+				# If we've reached the end of a win group,
+				# Add the existing group and create a new one
+				resorted_standings.append(win_group)
+				curr_wins = team_wins
+				win_group = [team_stats]
+
+		# Append last win group since it won't be added in for loop
+		resorted_standings.append(win_group)
+	
+		# Now sort internal lists and flatten
+		flattened_standings = []
+		for win_group in resorted_standings:
+			flattened_standings.extend(sorted(win_group, key=lambda x: (x[1], -x[3])))
+		assert len(flattened_standings) == len(sorted_standings)
+		return flattened_standings
+
 	def get_standings(self, week=None):
 		teams = self.league.teams
 
@@ -108,32 +141,7 @@ class Commands:
 		# Sort standings based on total wins
 		standings = sorted(standings, key=lambda tup: tup[0], reverse=True)
 
-		def break_ties(sorted_standings):
-			# Break ties using total Points For
-			resorted_standings = []
-			curr_wins = -1
-			win_group = []
-			for team_stats in sorted_standings:
-				team_wins = team_stats[0]
-				if team_wins == curr_wins:
-					win_group.append(team_stats)
-				else:
-					# If we've reached the end of a win group,
-					# Add the existing group and create a new one
-					resorted_standings.append(win_group)
-					curr_wins = team_wins
-					win_group = [team_stats]
-
-			# Append last win group since it won't be added in for loop
-			resorted_standings.append(win_group)
-		
-			# Now sort internal lists and flatten
-			flattened_standings = []
-			for win_group in resorted_standings:
-				flattened_standings.extend(sorted(win_group, key=lambda x: x[3], reverse=True))
-			return flattened_standings
-
-		standings = break_ties(standings)
+		standings = self._break_ties(standings)
 		standings_txt = [f"{pos + 1}: {team_name} ({wins} - {losses}) (+{top_half_totals[team_name]})" for \
 		 pos, (wins, losses, team_name, pf) in enumerate(standings)]
 		text = ["Current Standings:"] + standings_txt
@@ -295,38 +303,6 @@ class Commands:
 
 		return text
 
-	# def get_team_projections(self, user_id):
-	# 	"""Checks GroupMe ID of sender and returns the projections for their team"""
-	# 	# Try to update player projections
-	# 	self.projections.fetch_projs(self.league.nfl_week)
-
-	# 	# Figure out which team is being referenced by checking the sender's ID
-	# 	user_team_num = self.gm_id_to_team[int(user_id)]
-	# 	user_team = self.league.teams[user_team_num]
-
-	# 	text = "Projections for {}:\n\n".format(user_team.team_name)
-
-	# 	for player in user_team.roster:
-	# 		# player is a Player object
-	# 		# Get the sleeper player object from the player's espn ID
-	# 		print("{} - {}".format(player.playerId, player.name))
-
-	# 		if player.playerId < 0:
-	# 			# Filter out negative espn player IDs (used for defences only)
-	# 			continue
-
-	# 		try:
-	# 			# Catch any key errors that occur here
-	# 			sleeper_player = self.sleeper_players.espn_indexing[player.playerId]
-	# 			player_proj = self.projections.all_projs[str(sleeper_player.sleeper_id)]
-	# 			text += "{} - {}\n".format(sleeper_player, player_proj.pts_half_ppr)
-	# 		except KeyError:
-	# 			# Handle the key error by saying here is no projection for the player
-	# 			text += "{} - n/a\n".format(sleeper_player, player_proj.pts_half_ppr)
-
-
-	# 	return text
-
 	def mock_user(self):
 		msg_list = self.last_message.lower().split(" ")
 		mock_msg_list = []
@@ -350,26 +326,3 @@ class Commands:
 
 	def send_message(self, text):
 		self.gm_bot.send_message(text)
-
-
-if __name__ == '__main__':
-
-	msg_list = "Look guys I'm just saying...".lower().split(" ")
-	mock_msg_list = []
-	# Offset index by number of punctuation characters so that punctuation doesn't interfere with capitalization of letters
-	punctuation = {",", "'", '"', "-", ":", ";", "!", "@", "#", "$", "%", "&"}
-	for word in msg_list:
-		mock_word = ""
-		punctuation_offset = 0
-		for idx, letter in enumerate(word):
-			if letter in punctuation:
-				punctuation_offset += 1
-
-			idx -= punctuation_offset
-
-			if idx % 2 != 0:
-				letter = letter.upper()
-			mock_word += letter
-		mock_msg_list.append(mock_word)
-
-	print(" ".join(mock_msg_list))

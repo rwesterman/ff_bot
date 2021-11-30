@@ -17,7 +17,7 @@ class GroupMeBot(object):
 		self.bot_id = bot_id
 
 	def __repr__(self):
-		return "GroupMeBot(%s)" % self.bot_id
+		return f"GroupMeBot({self.bot_id})"
 
 	def send_message(self, text):
 		#Sends a message to the chatroom
