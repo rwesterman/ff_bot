@@ -1,11 +1,13 @@
 from utils.players import Projections, SleeperPlayers
 import datetime
+from collections import namedtuple
 
 class Commands:
 	def __init__(self, gm_bot, league):
 		self.gm_bot = gm_bot
 		self.league = league
 
+		self.TeamStats = namedtuple("TeamStats", ["wins", "losses", "team_name", "points_for"])
 		# A mapping from groupme user ID to team number
 		self.gm_id_to_team = {
 							11847036 : 0,
@@ -89,41 +91,38 @@ class Commands:
 		return total_projected
 
 
-	def _break_ties(self, sorted_standings):
-		# TODO: Consider implementing this recursively. Would need to pass in sort order, sort index, tiebreaker index
-		"""
-		Standings are determined in the following order:
-		1) Most wins
-		2) Least losses
-		3) Most 'Points For'
+	# def _break_ties(self, sorted_standings):
+	# 	"""
+	# 	Standings are determined in the following order:
 
-		Input standings should already be sorted by most wins, so this function
-		breaks ties by least losses and then remaining ties by Points For
-		"""
-		resorted_standings = []
-		curr_wins = -1
-		win_group = []
-		# Group teams by number of wins
-		for team_stats in sorted_standings:
-			team_wins = team_stats[0]
-			if team_wins == curr_wins:
-				win_group.append(team_stats)
-			else:
-				# If we've reached the end of a win group,
-				# Add the existing group and create a new one
-				resorted_standings.append(win_group)
-				curr_wins = team_wins
-				win_group = [team_stats]
 
-		# Append last win group since it won't be added in for loop
-		resorted_standings.append(win_group)
+	# 	Input standings should already be sorted by most wins, so this function
+	# 	breaks ties by least losses and then remaining ties by Points For
+	# 	"""
+	# 	resorted_standings = []
+	# 	curr_wins = -1
+	# 	win_group = []
+	# 	# Group teams by number of wins
+	# 	for team_stats in sorted_standings:
+	# 		team_wins = team_stats[0]
+	# 		if team_wins == curr_wins:
+	# 			win_group.append(team_stats)
+	# 		else:
+	# 			# If we've reached the end of a win group,
+	# 			# Add the existing group and create a new one
+	# 			resorted_standings.append(win_group)
+	# 			curr_wins = team_wins
+	# 			win_group = [team_stats]
+
+	# 	# Append last win group since it won't be added in for loop
+	# 	resorted_standings.append(win_group)
 	
-		# Now sort internal lists and flatten
-		flattened_standings = []
-		for win_group in resorted_standings:
-			flattened_standings.extend(sorted(win_group, key=lambda x: (x[1], -x[3])))
-		assert len(flattened_standings) == len(sorted_standings)
-		return flattened_standings
+	# 	# Now sort internal lists and flatten
+	# 	flattened_standings = []
+	# 	for win_group in resorted_standings:
+	# 		flattened_standings.extend(sorted(win_group, key=lambda x: (x[1], -x[3])))
+	# 	assert len(flattened_standings) == len(sorted_standings)
+	# 	return flattened_standings
 
 	def get_standings(self, week=None):
 		teams = self.league.teams
@@ -137,13 +136,16 @@ class Commands:
 		standings = []
 		for t in teams:
 			wins = top_half_totals[t.team_name] + t.wins
-			standings.append((wins, t.losses, t.team_name, t.points_for))
-		# Sort standings based on total wins
-		standings = sorted(standings, key=lambda tup: tup[0], reverse=True)
+			standings.append(self.TeamStats(wins, t.losses, t.team_name, t.points_for))
 
-		standings = self._break_ties(standings)
+		# Sort standings by the following criteria:
+		# 1) Most wins
+		# 2) Least losses
+		# 3) Most 'Points For'
+		standings = sorted(standings, key=lambda x: (x.wins, -x.losses, x.points_for), reverse=True)
+
 		standings_txt = [f"{pos + 1}: {team_name} ({wins} - {losses}) (+{top_half_totals[team_name]})" for \
-		 pos, (wins, losses, team_name, pf) in enumerate(standings)]
+			pos, (wins, losses, team_name, pf) in enumerate(standings)]
 		text = ["Current Standings:"] + standings_txt
 
 		return "\n".join(text)
