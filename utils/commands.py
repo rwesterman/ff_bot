@@ -1,5 +1,6 @@
 from utils.players import Projections, SleeperPlayers
 import datetime
+import re
 from collections import namedtuple
 
 class Commands:
@@ -45,11 +46,15 @@ class Commands:
 		cmd_word = gm_data['text'].lower().split()[0]
 		
 		text = ''
+		# If the first word of a message doesn't start with a "/", then it isn't a command
 		if not cmd_word.startswith("/"):
-			# If the first word of a message doesn't start with a "/", then it isn't a command
+			# Per Stephen's request...
+			matches = re.search(r"(\b69)", gm_data['text'])
+			if matches:
+				text = 'Nice.'
 			self.last_message = gm_data['text']
 			print("Last message is: {}".format(self.last_message))
-			return None
+			return text 
 		elif cmd_word in self.cmd_dict:
 			# Run the corresponding class method
 			text = self.cmd_dict[cmd_word]()
@@ -89,40 +94,6 @@ class Commands:
 				else:
 					total_projected += i.projected_points
 		return total_projected
-
-
-	# def _break_ties(self, sorted_standings):
-	# 	"""
-	# 	Standings are determined in the following order:
-
-
-	# 	Input standings should already be sorted by most wins, so this function
-	# 	breaks ties by least losses and then remaining ties by Points For
-	# 	"""
-	# 	resorted_standings = []
-	# 	curr_wins = -1
-	# 	win_group = []
-	# 	# Group teams by number of wins
-	# 	for team_stats in sorted_standings:
-	# 		team_wins = team_stats[0]
-	# 		if team_wins == curr_wins:
-	# 			win_group.append(team_stats)
-	# 		else:
-	# 			# If we've reached the end of a win group,
-	# 			# Add the existing group and create a new one
-	# 			resorted_standings.append(win_group)
-	# 			curr_wins = team_wins
-	# 			win_group = [team_stats]
-
-	# 	# Append last win group since it won't be added in for loop
-	# 	resorted_standings.append(win_group)
-	
-	# 	# Now sort internal lists and flatten
-	# 	flattened_standings = []
-	# 	for win_group in resorted_standings:
-	# 		flattened_standings.extend(sorted(win_group, key=lambda x: (x[1], -x[3])))
-	# 	assert len(flattened_standings) == len(sorted_standings)
-	# 	return flattened_standings
 
 	def get_standings(self, week=None):
 		teams = self.league.teams
