@@ -11,9 +11,9 @@ class SlackTestCase(unittest.TestCase):
     '''Test SlackBot class'''
 
     def setUp(self):
-        self.url = "https://hooks.slack.com/services/A1B2C3/ABC1ABC2/abcABC1abcABC2"
+        self.url = "https://hooks.slack.com/services/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"
         self.test_bot = SlackBot(self.url)
-        self.test_text = "This is a test."
+        self.test_text = "This is a test of the automated bot system. This is only a test."
 
     @requests_mock.Mocker()
     def test_send_message(self, m):
