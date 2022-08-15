@@ -113,6 +113,8 @@ if os.getenv("DEBUG", False) == "True":
 
 	os.environ["SWID"] = "{BFD1DF0E-01204EF1-A54E-128EAE53AA82}"
 
+	os.environ["SLACK_WEBHOOK_URL"] = os.getenv("SLACK_DEBUG_WEBHOOK_URL")
+
 	os.environ["LEAGUE_YEAR"] = "2022"
 
 	os.environ["LEAGUE_ID"] = "950634"
