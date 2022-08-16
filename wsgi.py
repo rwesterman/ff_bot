@@ -38,15 +38,9 @@ def ff_webhook():
 @app.route("/event/", methods=['POST'])
 def event_webhook():
 	logger.info("Received POST command to /event/")
-	data = request.form
-	logger.info(data)
-	logger.info(f"Request.data gives {request.data}")
-	logger.info(f"Request.json gives {request.get_json(force=True)}")
-	logger.info(data["body"])
-	logger.info(data["body"]["type"])
-	logger.info(data["body"]["token"])
-	logger.info(data["body"]["challenge"])
-	return "OK"
+	data = request.get_json(force=True)
+
+	return data["challenge"]
 
 def init_scheduler():
 	"""
