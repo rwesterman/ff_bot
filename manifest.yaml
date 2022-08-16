@@ -1,0 +1,35 @@
+display_information:
+  name: Sports Bot
+features:
+  bot_user:
+    display_name: Sports Bot
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - bookmarks:read
+      - bookmarks:write
+      - channels:history
+      - channels:join
+      - channels:read
+      - chat:write
+      - chat:write.customize
+      - commands
+      - dnd:read
+      - emoji:read
+      - files:read
+      - groups:history
+      - groups:read
+      - im:read
+      - incoming-webhook
+      - links:read
+      - users:read
+      - pins:write
+      - pins:read
+      - links:write
+      - files:write
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

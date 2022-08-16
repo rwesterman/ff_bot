@@ -94,7 +94,7 @@ def initialize_bot():
 	slack_webhook_url = os.getenv("SLACK_WEBHOOK_URL", 1)
 	discord_webhook_url = os.getenv("DISCORD_WEBHOOK_URL", 1)
 	league_id = int(os.getenv("LEAGUE_ID", "1"))
-	year = int(os.getenv("LEAGUE_YEAR", 2021))
+	year = int(os.getenv("LEAGUE_YEAR", 2022))
 	swid = os.getenv("SWID", "{1}")
 
 	if swid.find("{", 0) == -1:
@@ -121,15 +121,15 @@ if os.getenv("DEBUG", False) == "True":
 
 	os.environ["SWID"] = "{BFD1DF0E-01204EF1-A54E-128EAE53AA82}"
 
-	os.environ["BOT_ID"] = "d6b7111ac8a3b7da98aed334ed"
+	os.environ["SLACK_WEBHOOK_URL"] = os.getenv("SLACK_DEBUG_WEBHOOK_URL")
 
-	os.environ["LEAGUE_YEAR"] = "2021"
+	os.environ["LEAGUE_YEAR"] = "2022"
 
 	os.environ["LEAGUE_ID"] = "950634"
 
 # Initialize an instance of the chatbot and create a Commands instance for the bot
 init_dict = initialize_bot()
-commander = Commands(init_dict["gm_bot"], init_dict["league"])
+commander = Commands(init_dict["slack_bot"], init_dict["league"])
 
 # Do scheduler initialization here
 init_scheduler()
