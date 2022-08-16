@@ -15,6 +15,38 @@ app = Flask(__name__)
 logger = logging.getLogger("flask")
 logging.basicConfig(level=logging.DEBUG)
 
+def initialize_bot():
+	"""Initialize a chatbot using the required Environmental Variables
+	Return each bot (slack, discord, groupme) and the Leauge object
+	"""
+
+	bot_id = os.getenv("BOT_ID", 1)
+	slack_webhook_url = os.getenv("SLACK_WEBHOOK_URL", 1)
+	discord_webhook_url = os.getenv("DISCORD_WEBHOOK_URL", 1)
+	league_id = int(os.getenv("LEAGUE_ID", "1"))
+	year = int(os.getenv("LEAGUE_YEAR", 2022))
+	swid = os.getenv("SWID", "{1}")
+
+	if swid.find("{", 0) == -1:
+		swid = "{" + swid
+	if swid.find("}", -1) == -1:
+		swid = swid + "}"
+
+	espn_s2 = os.getenv("ESPN_S2", "1")
+
+	bot = GroupMeBot(bot_id)
+	slack_bot = SlackBot(slack_webhook_url)
+	discord_bot = DiscordBot(discord_webhook_url)
+	if swid == '{1}' and espn_s2 == '1':
+		league = League(league_id, year)
+	else:
+		league = League(league_id, year, espn_s2, swid)
+
+	return {"gm_bot": bot, "slack_bot": slack_bot, "discord_bot": discord_bot, "league": league}
+
+# Initialize an instance of the chatbot and create a Commands instance for the bot
+init_dict = initialize_bot()
+commander = Commands(init_dict["slack_bot"], init_dict["league"])
 
 @app.route('/FF', methods=['POST'])
 def ff_webhook():
@@ -42,6 +74,45 @@ def event_webhook():
 	logger.info(f"Event data: {data}")
 
 	return "OK"
+
+# https://ff-bot-groupme.herokuapp.com/help/
+@app.route("help/", methods=['POST'])
+def help():
+	data = request.json()
+	logger.info(f"Help command: data = {data}")
+
+	return commander.commands_help()
+
+
+@app.route("matchups/", methods=['POST'])
+def matchups():
+	data = request.json()
+	logger.info(f"Matchups command: data = {data}")
+
+	return commander.get_matchups()
+
+@app.route("scores/", methods=['POST'])
+def scores():
+	data = request.json()
+	logger.info(f"Scores command: data = {data}")
+
+	return commander.get_scoreboard_short()
+
+@app.route("final/", methods=['POST'])
+def final():
+	data = request.json()
+	logger.info(f"Final command: data = {data}")
+
+	return commander.get_final()
+
+
+@app.route("projections/", methods=['POST'])
+def projections():
+	data = request.json()
+	logger.info(f"Projections command: data = {data}")
+
+	return commander.get_projected_scoreboard()
+
 
 def init_scheduler():
 	"""
@@ -85,34 +156,6 @@ def init_scheduler():
 	sched.start()
 	print("Ready!")
 
-def initialize_bot():
-	"""Initialize a chatbot using the required Environmental Variables
-	Return each bot (slack, discord, groupme) and the Leauge object
-	"""
-
-	bot_id = os.getenv("BOT_ID", 1)
-	slack_webhook_url = os.getenv("SLACK_WEBHOOK_URL", 1)
-	discord_webhook_url = os.getenv("DISCORD_WEBHOOK_URL", 1)
-	league_id = int(os.getenv("LEAGUE_ID", "1"))
-	year = int(os.getenv("LEAGUE_YEAR", 2022))
-	swid = os.getenv("SWID", "{1}")
-
-	if swid.find("{", 0) == -1:
-		swid = "{" + swid
-	if swid.find("}", -1) == -1:
-		swid = swid + "}"
-
-	espn_s2 = os.getenv("ESPN_S2", "1")
-
-	bot = GroupMeBot(bot_id)
-	slack_bot = SlackBot(slack_webhook_url)
-	discord_bot = DiscordBot(discord_webhook_url)
-	if swid == '{1}' and espn_s2 == '1':
-		league = League(league_id, year)
-	else:
-		league = League(league_id, year, espn_s2, swid)
-
-	return {"gm_bot": bot, "slack_bot": slack_bot, "discord_bot": discord_bot, "league": league}
 
 # os.environ["DEBUG"] = "True"
 # Check if debug mode is set, and if so then default to debug groupme bot
@@ -127,9 +170,6 @@ if os.getenv("DEBUG", False) == "True":
 
 	os.environ["LEAGUE_ID"] = "950634"
 
-# Initialize an instance of the chatbot and create a Commands instance for the bot
-init_dict = initialize_bot()
-commander = Commands(init_dict["slack_bot"], init_dict["league"])
 
 # Do scheduler initialization here
 init_scheduler()
