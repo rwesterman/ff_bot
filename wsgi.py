@@ -76,7 +76,7 @@ def event_webhook():
 	return "OK"
 
 # https://ff-bot-groupme.herokuapp.com/help/
-@app.route("help/", methods=['POST'])
+@app.route("/help/", methods=['POST'])
 def help():
 	data = request.json()
 	logger.info(f"Help command: data = {data}")
@@ -84,21 +84,21 @@ def help():
 	return commander.commands_help()
 
 
-@app.route("matchups/", methods=['POST'])
+@app.route("/matchups/", methods=['POST'])
 def matchups():
 	data = request.json()
 	logger.info(f"Matchups command: data = {data}")
 
 	return commander.get_matchups()
 
-@app.route("scores/", methods=['POST'])
+@app.route("/scores/", methods=['POST'])
 def scores():
 	data = request.json()
 	logger.info(f"Scores command: data = {data}")
 
 	return commander.get_scoreboard_short()
 
-@app.route("final/", methods=['POST'])
+@app.route("/final/", methods=['POST'])
 def final():
 	data = request.json()
 	logger.info(f"Final command: data = {data}")
@@ -106,7 +106,7 @@ def final():
 	return commander.get_final()
 
 
-@app.route("projections/", methods=['POST'])
+@app.route("/projections/", methods=['POST'])
 def projections():
 	data = request.json()
 	logger.info(f"Projections command: data = {data}")
