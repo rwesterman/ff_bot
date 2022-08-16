@@ -35,6 +35,13 @@ def ff_webhook():
 	# This prevents a ValueError raised by Flask
 	return "OK"
 
+@app.route("/event", methods=['POST'])
+def event_webhook():
+	data = request.form
+	logger.info(data)
+
+	return "OK"
+
 def init_scheduler():
 	"""
 	Schedule the chatbot to report scores/matchups/etc at particular times
