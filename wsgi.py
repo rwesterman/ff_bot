@@ -39,6 +39,7 @@ def ff_webhook():
 def event_webhook():
 	logger.info("Received POST command to /event/")
 	data = request.get_json(force=True)
+	logger.info("Event data: {data}")
 
 	return data["challenge"]
 
