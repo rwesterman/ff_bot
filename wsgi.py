@@ -40,6 +40,8 @@ def event_webhook():
 	logger.info("Received POST command to /event/")
 	data = request.form
 	logger.info(data)
+	logger.info(f"Request.data gives {request.data}")
+	logger.info(f"Request.json gives {request.get_json(force=True)}")
 	logger.info(data["body"])
 	logger.info(data["body"]["type"])
 	logger.info(data["body"]["token"])
