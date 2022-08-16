@@ -40,7 +40,10 @@ def event_webhook():
 	logger.info("Received POST command to /event/")
 	data = request.form
 	logger.info(data)
-	print(data)
+	logger.info(data["body"])
+	logger.info(data["body"]["type"])
+	logger.info(data["body"]["token"])
+	logger.info(data["body"]["challenge"])
 	return "OK"
 
 def init_scheduler():
