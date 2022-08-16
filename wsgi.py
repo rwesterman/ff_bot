@@ -35,11 +35,12 @@ def ff_webhook():
 	# This prevents a ValueError raised by Flask
 	return "OK"
 
-@app.route("/event", methods=['POST'])
+@app.route("/event/", methods=['POST'])
 def event_webhook():
+	logger.info("Received POST command to /event/")
 	data = request.form
 	logger.info(data)
-
+	print(data)
 	return "OK"
 
 def init_scheduler():
