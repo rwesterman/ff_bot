@@ -2,12 +2,13 @@ import os
 import logging
 
 from espn_api.football import League
-from apscheduler.schedulers.background import BackgroundScheduler
+# from apscheduler.schedulers.background import BackgroundScheduler
 
 from utils.bots import GroupMeBot, SlackBot, DiscordBot
 from utils.commands import Commands
 import slack_sdk as slack
-from flask import Flask, request, Response
+from slack_sdk.errors import SlackRequestError, SlackApiError
+from flask import Flask, request, make_response
 
 app = Flask(__name__)
 
@@ -58,7 +59,7 @@ def ff_webhook():
 	appropriate action can be taken."""
 	# data received at GroupMe callback URL
 	gm_data = request.get_json()
-	logger.info("Received {}".format(gm_data))
+	logger.debug("Received {}".format(gm_data))
 
 	# Don't respond to bots
 	if not "bot" in gm_data['name'].lower():
@@ -70,98 +71,152 @@ def ff_webhook():
 	# This prevents a ValueError raised by Flask
 	return "OK"
 
-@app.route("/event/", methods=['POST'])
-def event_webhook():
-	logger.info("Received POST command to /event/")
-	data = request.get_json(force=True)
-	logger.info(f"Event data: {data}")
+# @app.route("/event/", methods=['POST'])
+# def event_webhook():
+# 	logger.debug("Received POST command to /event/")
+# 	data = request.form
+# 	logger.debug(f"Event data: {data}")
 
-	return "OK"
+# 	return "OK"
 
 # https://ff-bot-groupme.herokuapp.com/help/
 @app.route("/help/", methods=['POST'])
 def help():
-	data = request.form
-	logger.info(f"Help command: data = {data}")
+	try:
+		data = request.form
+		logger.debug(f"Help command: data = {data}")
+		channel_id = data.get('channel_id')
+	except (AttributeError, KeyError) as e:
+		logger.error(f"Error when retrieving form data. {e}")
+		return make_response(f"Failed to retrieve form data"), 400
 
-	channel_id = data.get('channel_id')
-	
-	slack_client.chat_postMessage(channel=channel_id, text=commander.commands_help())
-
-	return Response(), 200
+	message = commander.commands_help()
+	response_status = post_slack_message(channel_id, message)
+	return response_status
 
 
 @app.route("/matchups/", methods=['POST'])
 def matchups():
-	data = request.get_json(force=True)
-	logger.info(f"Matchups command: data = {data}")
+	try:
+		data = request.form
+		logger.debug(f"Matchups command: data = {data}")
+		channel_id = data.get('channel_id')
+	except (AttributeError, KeyError) as e:
+		logger.error(f"Error when retrieving form data. {e}")
+		return make_response(f"Failed to retrieve form data"), 400
 
-	return commander.get_matchups()
+	message=commander.get_matchups()
+	response_status = post_slack_message(channel_id, message)
+	return response_status
 
 @app.route("/scores/", methods=['POST'])
 def scores():
-	data = request.get_json(force=True)
-	logger.info(f"Scores command: data = {data}")
+	try:
+		data = request.form
+		logger.debug(f"scores command: data = {data}")
+		channel_id = data.get('channel_id')
+	except (AttributeError, KeyError) as e:
+		logger.error(f"Error when retrieving form data. {e}")
+		return make_response(f"Failed to retrieve form data"), 400
 
-	return commander.get_scoreboard_short()
+	message=commander.get_scoreboard_short()
+	response_status = post_slack_message(channel_id, message)
+	return response_status
 
 @app.route("/final/", methods=['POST'])
 def final():
-	data = request.get_json(force=True)
-	logger.info(f"Final command: data = {data}")
+	try:
+		data = request.form
+		logger.debug(f"Final command: data = {data}")
+		channel_id = data.get('channel_id')
+	except (AttributeError, KeyError) as e:
+		logger.error(f"Error when retrieving form data. {e}")
+		return make_response(f"Failed to retrieve form data"), 400
 
-	return commander.get_final()
+	message=commander.get_final()
+	response_status = post_slack_message(channel_id, message)
+	return response_status
 
 
 @app.route("/projections/", methods=['POST'])
 def projections():
-	data = request.get_json(force=True)
-	logger.info(f"Projections command: data = {data}")
+	try:
+		data = request.form
+		logger.debug(f"Projections command: data = {data}")
+		channel_id = data.get('channel_id')
+	except (AttributeError, KeyError) as e:
+		logger.error(f"Error when retrieving form data. {e}")
+		return make_response(f"Failed to retrieve form data"), 400
 
-	return commander.get_projected_scoreboard()
+	message=commander.get_projected_scoreboard()
+	response_status = post_slack_message(channel_id, message)
+	return response_status
+
+@app.route("/standings/", methods=["POST"]):
+def standings():
+	try:
+		data = request.form
+		logger.debug(f"Projections command: data = {data}")
+		channel_id = data.get('channel_id')
+	except (AttributeError, KeyError) as e:
+		logger.error(f"Error when retrieving form data. {e}")
+		return make_response(f"Failed to retrieve form data"), 400
+
+	message=commander.get_projected_scoreboard()
+	response_status = post_slack_message(channel_id, message)
+	return response_status
+
+def post_slack_message(channel, message):
+	try:
+		slack_client.chat_postMessage(channel=channel, text=message)
+	except SlackApiError as e:
+		err_code = e.response["error"]
+		return make_response(f"Failed to post message due to {err_code}", 500)
+
+	return make_response(""), 200
 
 
-def init_scheduler():
-	"""
-	Schedule the chatbot to report scores/matchups/etc at particular times
-	:return:
-	"""
-	ff_start_date = os.getenv("START_DATE", '2021-09-10')
-	ff_end_date = os.getenv("END_DATE", '2021-12-30')
+# def init_scheduler():
+# 	"""
+# 	Schedule the chatbot to report scores/matchups/etc at particular times
+# 	:return:
+# 	"""
+# 	ff_start_date = os.getenv("START_DATE", '2021-09-10')
+# 	ff_end_date = os.getenv("END_DATE", '2021-12-30')
 
-	my_timezone = os.getenv("TIMEZONE",'America/New_York')
+# 	my_timezone = os.getenv("TIMEZONE",'America/New_York')
 
-	game_timezone='America/New_York'
-	sched = BackgroundScheduler(job_defaults={'misfire_grace_time': 15*60})
+# 	game_timezone='America/New_York'
+# 	sched = BackgroundScheduler(job_defaults={'misfire_grace_time': 15*60})
 
-	#power rankings:                     tuesday evening at 6:30pm local time.
-	#matchups:                           thursday evening at 7:30pm east coast time.
-	#close scores (within 15.99 points): monday evening at 6:30pm east coast time.
-	#trophies:                           tuesday morning at 7:30am local time.
-	#score update:                       friday, monday, and tuesday morning at 7:30am local time.
-	#score update:                       sunday at 4pm, 8pm east coast time.
+# 	#power rankings:                     tuesday evening at 6:30pm local time.
+# 	#matchups:                           thursday evening at 7:30pm east coast time.
+# 	#close scores (within 15.99 points): monday evening at 6:30pm east coast time.
+# 	#trophies:                           tuesday morning at 7:30am local time.
+# 	#score update:                       friday, monday, and tuesday morning at 7:30am local time.
+# 	#score update:                       sunday at 4pm, 8pm east coast time.
 
-	sched.add_job(commander.get_power_rankings, 'cron', id='power_rankings',
-		day_of_week='tue', hour=18, minute=30, start_date=ff_start_date, end_date=ff_end_date,
-		timezone=my_timezone, replace_existing=True)
-	sched.add_job(commander.get_matchups, 'cron', id='matchups',
-		day_of_week='thu', hour=19, minute=30, start_date=ff_start_date, end_date=ff_end_date,
-		timezone=game_timezone, replace_existing=True)
-	sched.add_job(commander.get_close_scores, 'cron', id='close_scores',
-		day_of_week='mon', hour=18, minute=30, start_date=ff_start_date, end_date=ff_end_date,
-		timezone=game_timezone, replace_existing=True)
-	sched.add_job(commander.get_final, 'cron', id='final',
-		day_of_week='tue', hour=7, minute=30, start_date=ff_start_date, end_date=ff_end_date,
-		timezone=my_timezone, replace_existing=True)
-	sched.add_job(commander.get_scoreboard_short, 'cron', id='scoreboard1',
-		day_of_week='fri,mon', hour=7, minute=30, start_date=ff_start_date, end_date=ff_end_date,
-		timezone=my_timezone, replace_existing=True)
-	sched.add_job(commander.get_scoreboard_short, 'cron', id='scoreboard2',
-		day_of_week='sun', hour='16,20', start_date=ff_start_date, end_date=ff_end_date,
-		timezone=game_timezone, replace_existing=True)
+# 	sched.add_job(commander.get_power_rankings, 'cron', id='power_rankings',
+# 		day_of_week='tue', hour=18, minute=30, start_date=ff_start_date, end_date=ff_end_date,
+# 		timezone=my_timezone, replace_existing=True)
+# 	sched.add_job(commander.get_matchups, 'cron', id='matchups',
+# 		day_of_week='thu', hour=19, minute=30, start_date=ff_start_date, end_date=ff_end_date,
+# 		timezone=game_timezone, replace_existing=True)
+# 	sched.add_job(commander.get_close_scores, 'cron', id='close_scores',
+# 		day_of_week='mon', hour=18, minute=30, start_date=ff_start_date, end_date=ff_end_date,
+# 		timezone=game_timezone, replace_existing=True)
+# 	sched.add_job(commander.get_final, 'cron', id='final',
+# 		day_of_week='tue', hour=7, minute=30, start_date=ff_start_date, end_date=ff_end_date,
+# 		timezone=my_timezone, replace_existing=True)
+# 	sched.add_job(commander.get_scoreboard_short, 'cron', id='scoreboard1',
+# 		day_of_week='fri,mon', hour=7, minute=30, start_date=ff_start_date, end_date=ff_end_date,
+# 		timezone=my_timezone, replace_existing=True)
+# 	sched.add_job(commander.get_scoreboard_short, 'cron', id='scoreboard2',
+# 		day_of_week='sun', hour='16,20', start_date=ff_start_date, end_date=ff_end_date,
+# 		timezone=game_timezone, replace_existing=True)
 
-	sched.start()
-	print("Ready!")
+# 	sched.start()
+# 	print("Ready!")
 
 
 # os.environ["DEBUG"] = "True"
@@ -179,7 +234,7 @@ if os.getenv("DEBUG", False) == "True":
 
 
 # Do scheduler initialization here
-init_scheduler()
+# init_scheduler()
 
 if __name__ == '__main__':
 	# Run the flask app if this script is called directly
