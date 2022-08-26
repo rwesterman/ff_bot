@@ -81,10 +81,12 @@ def event_webhook():
 # https://ff-bot-groupme.herokuapp.com/help/
 @app.route("/help/", methods=['POST'])
 def help():
-	data = request.get_json(force=True)
+	data = request.form
 	logger.info(f"Help command: data = {data}")
+
+	channel_id = data.get('channel_id')
 	
-	slack_client.chat_postMessage(channel=data["channel_id"], text=commander.commands_help())
+	slack_client.chat_postMessage(channel=channel_id, text=commander.commands_help())
 
 	return Response(), 200
 
