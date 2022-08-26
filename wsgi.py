@@ -105,7 +105,11 @@ def matchups():
 		logger.error(f"Error when retrieving form data. {e}")
 		return make_response(f"Failed to retrieve form data"), 400
 
-	message=commander.get_matchups()
+	try:
+		message=commander.get_matchups()
+	except KeyError as e:
+		post_slack_message("Could not retrieve matchups. This could be due to the ESPN API failing to return season data.")
+		return make_response(f"Failed to retrieve matchups. Error {e}", 404)
 	response_status = post_slack_message(channel_id, message)
 	return response_status
 
@@ -119,7 +123,11 @@ def scores():
 		logger.error(f"Error when retrieving form data. {e}")
 		return make_response(f"Failed to retrieve form data"), 400
 
-	message=commander.get_scoreboard_short()
+	try:
+		message=commander.get_scoreboard_short()
+	except KeyError as e:
+		post_slack_message("Could not retrieve scores. This could be due to the ESPN API failing to return season data.")
+		return make_response(f"Failed to retrieve scores. Error {e}", 404)
 	response_status = post_slack_message(channel_id, message)
 	return response_status
 
@@ -133,7 +141,11 @@ def final():
 		logger.error(f"Error when retrieving form data. {e}")
 		return make_response(f"Failed to retrieve form data"), 400
 
-	message=commander.get_final()
+	try:
+		message=commander.get_final()
+	except KeyError as e:
+		post_slack_message("Could not retrieve final scores. This could be due to the ESPN API failing to return season data.")
+		return make_response(f"Failed to retrieve final scores. Error {e}", 404)
 	response_status = post_slack_message(channel_id, message)
 	return response_status
 
@@ -148,7 +160,11 @@ def projections():
 		logger.error(f"Error when retrieving form data. {e}")
 		return make_response(f"Failed to retrieve form data"), 400
 
-	message=commander.get_projected_scoreboard()
+	try:
+		message=commander.get_projected_scoreboard()
+	except KeyError as e:
+		post_slack_message("Could not retrieve projetions. This could be due to the ESPN API failing to return season data.")
+		return make_response(f"Failed to retrieve projections. Error {e}", 404)
 	response_status = post_slack_message(channel_id, message)
 	return response_status
 
@@ -162,9 +178,15 @@ def standings():
 		logger.error(f"Error when retrieving form data. {e}")
 		return make_response(f"Failed to retrieve form data"), 400
 
-	message=commander.get_standings()
+	try:
+		message=commander.get_standings()
+	except KeyError as e:
+		post_slack_message("Could not retrieve standings. This could be due to the ESPN API failing to return season data.")
+		return make_response(f"Failed to retrieve standings. Error {e}", 404)
+	
 	response_status = post_slack_message(channel_id, message)
 	return response_status
+
 
 def post_slack_message(channel, message):
 	try:
@@ -174,24 +196,6 @@ def post_slack_message(channel, message):
 		return make_response(f"Failed to post message due to {err_code}", 500)
 
 	return make_response(""), 200
-
-
-# os.environ["DEBUG"] = "True"
-# Check if debug mode is set, and if so then default to debug groupme bot
-if os.getenv("DEBUG", False) == "True":
-	os.environ["ESPN_S2"] = "AECcqBAxkb6iztLdTzvhM6dSAdobKKCPuSY8DF3qSTGmjjVUtPZT8NSSv7KywiL569X2Ml8wZb0rxUNrUY%2F1ky%2FSzYlFigLbX%2FQZhA8D7nkkB752d9kMJmWO6B43%2FZFspi1tyvRPUPSciqK1A0hsYMI9HYyUa37MLrQFTbXrEcSwpb1%2BH0uwWdmm2%2BS2GZM04fjCWtC4GjuIgdBx%2FxE8VYOz6STEAPyGSn9RxDonMuDrCGHEljM1a1I2vi4m3eesI9Rmx%2FqH0kq0Sv7ybGL0YxHD"
-
-	os.environ["SWID"] = "{BFD1DF0E-01204EF1-A54E-128EAE53AA82}"
-
-	os.environ["SLACK_WEBHOOK_URL"] = os.getenv("SLACK_DEBUG_WEBHOOK_URL")
-
-	os.environ["LEAGUE_YEAR"] = "2022"
-
-	os.environ["LEAGUE_ID"] = "950634"
-
-
-# Do scheduler initialization here
-# init_scheduler()
 
 if __name__ == '__main__':
 	# Run the flask app if this script is called directly

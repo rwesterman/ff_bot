@@ -68,9 +68,6 @@ class Commands:
 		text += "/matchups - Returns this week's matchups\n"
 		text += "/standings - Returns the overall league standings\n"
 		text += "/scores - Returns this week's scores\n"
-		text += "/close - Returns close scores from this week's FF matchups\n"
-		text += "/pwr - Returns the power rankings for each team in the league\n"
-		text += "/trophies - Returns a list of various awards\n"
 		text += "/projections - Returns the projected points for each of your players this week\n"
 
 		return text
