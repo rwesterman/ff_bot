@@ -162,7 +162,7 @@ def standings():
 		logger.error(f"Error when retrieving form data. {e}")
 		return make_response(f"Failed to retrieve form data"), 400
 
-	message=commander.get_projected_scoreboard()
+	message=commander.get_standings()
 	response_status = post_slack_message(channel_id, message)
 	return response_status
 
@@ -174,49 +174,6 @@ def post_slack_message(channel, message):
 		return make_response(f"Failed to post message due to {err_code}", 500)
 
 	return make_response(""), 200
-
-
-# def init_scheduler():
-# 	"""
-# 	Schedule the chatbot to report scores/matchups/etc at particular times
-# 	:return:
-# 	"""
-# 	ff_start_date = os.getenv("START_DATE", '2021-09-10')
-# 	ff_end_date = os.getenv("END_DATE", '2021-12-30')
-
-# 	my_timezone = os.getenv("TIMEZONE",'America/New_York')
-
-# 	game_timezone='America/New_York'
-# 	sched = BackgroundScheduler(job_defaults={'misfire_grace_time': 15*60})
-
-# 	#power rankings:                     tuesday evening at 6:30pm local time.
-# 	#matchups:                           thursday evening at 7:30pm east coast time.
-# 	#close scores (within 15.99 points): monday evening at 6:30pm east coast time.
-# 	#trophies:                           tuesday morning at 7:30am local time.
-# 	#score update:                       friday, monday, and tuesday morning at 7:30am local time.
-# 	#score update:                       sunday at 4pm, 8pm east coast time.
-
-# 	sched.add_job(commander.get_power_rankings, 'cron', id='power_rankings',
-# 		day_of_week='tue', hour=18, minute=30, start_date=ff_start_date, end_date=ff_end_date,
-# 		timezone=my_timezone, replace_existing=True)
-# 	sched.add_job(commander.get_matchups, 'cron', id='matchups',
-# 		day_of_week='thu', hour=19, minute=30, start_date=ff_start_date, end_date=ff_end_date,
-# 		timezone=game_timezone, replace_existing=True)
-# 	sched.add_job(commander.get_close_scores, 'cron', id='close_scores',
-# 		day_of_week='mon', hour=18, minute=30, start_date=ff_start_date, end_date=ff_end_date,
-# 		timezone=game_timezone, replace_existing=True)
-# 	sched.add_job(commander.get_final, 'cron', id='final',
-# 		day_of_week='tue', hour=7, minute=30, start_date=ff_start_date, end_date=ff_end_date,
-# 		timezone=my_timezone, replace_existing=True)
-# 	sched.add_job(commander.get_scoreboard_short, 'cron', id='scoreboard1',
-# 		day_of_week='fri,mon', hour=7, minute=30, start_date=ff_start_date, end_date=ff_end_date,
-# 		timezone=my_timezone, replace_existing=True)
-# 	sched.add_job(commander.get_scoreboard_short, 'cron', id='scoreboard2',
-# 		day_of_week='sun', hour='16,20', start_date=ff_start_date, end_date=ff_end_date,
-# 		timezone=game_timezone, replace_existing=True)
-
-# 	sched.start()
-# 	print("Ready!")
 
 
 # os.environ["DEBUG"] = "True"
