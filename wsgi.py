@@ -108,7 +108,7 @@ def matchups():
 	try:
 		message=commander.get_matchups()
 	except KeyError as e:
-		post_slack_message("Could not retrieve matchups. This could be due to the ESPN API failing to return season data.")
+		post_slack_message(channel_id, "Could not retrieve matchups. This could be due to the ESPN API failing to return season data.")
 		return make_response(f"Failed to retrieve matchups. Error {e}", 404)
 	response_status = post_slack_message(channel_id, message)
 	return response_status
@@ -126,7 +126,7 @@ def scores():
 	try:
 		message=commander.get_scoreboard_short()
 	except KeyError as e:
-		post_slack_message("Could not retrieve scores. This could be due to the ESPN API failing to return season data.")
+		post_slack_message(channel_id, "Could not retrieve scores. This could be due to the ESPN API failing to return season data.")
 		return make_response(f"Failed to retrieve scores. Error {e}", 404)
 	response_status = post_slack_message(channel_id, message)
 	return response_status
@@ -144,7 +144,7 @@ def final():
 	try:
 		message=commander.get_final()
 	except KeyError as e:
-		post_slack_message("Could not retrieve final scores. This could be due to the ESPN API failing to return season data.")
+		post_slack_message(channel_id, "Could not retrieve final scores. This could be due to the ESPN API failing to return season data.")
 		return make_response(f"Failed to retrieve final scores. Error {e}", 404)
 	response_status = post_slack_message(channel_id, message)
 	return response_status
@@ -163,7 +163,7 @@ def projections():
 	try:
 		message=commander.get_projected_scoreboard()
 	except KeyError as e:
-		post_slack_message("Could not retrieve projetions. This could be due to the ESPN API failing to return season data.")
+		post_slack_message(channel_id, "Could not retrieve projetions. This could be due to the ESPN API failing to return season data.")
 		return make_response(f"Failed to retrieve projections. Error {e}", 404)
 	response_status = post_slack_message(channel_id, message)
 	return response_status
@@ -181,7 +181,7 @@ def standings():
 	try:
 		message=commander.get_standings()
 	except KeyError as e:
-		post_slack_message("Could not retrieve standings. This could be due to the ESPN API failing to return season data.")
+		post_slack_message(channel_id, "Could not retrieve standings. This could be due to the ESPN API failing to return season data.")
 		return make_response(f"Failed to retrieve standings. Error {e}", 404)
 	
 	response_status = post_slack_message(channel_id, message)
