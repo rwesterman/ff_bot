@@ -1,9 +1,36 @@
 display_information:
   name: Sports Bot
+  description: Getcher sports here
+  background_color: "#cc5500"
 features:
   bot_user:
     display_name: Sports Bot
-    always_online: false
+    always_online: true
+  slash_commands:
+    - command: /help
+      url: https://ff-bot-groupme.herokuapp.com/help/
+      description: Get a list of available commands
+      should_escape: false
+    - command: /matchups
+      url: https://ff-bot-groupme.herokuapp.com/matchups/
+      description: Returns the week's matchups
+      should_escape: false
+    - command: /scores
+      url: https://ff-bot-groupme.herokuapp.com/scores/
+      description: Display current scores for this week
+      should_escape: false
+    - command: /projections
+      url: https://ff-bot-groupme.herokuapp.com/projections/
+      description: Display projected scores
+      should_escape: false
+    - command: /standings
+      url: https://ff-bot-groupme.herokuapp.com/standings/
+      description: Show the standings for the season
+      should_escape: false
+    - command: /final
+      url: https://ff-bot-groupme.herokuapp.com/final/
+      description: Get final scores for the week
+      should_escape: false
 oauth_config:
   scopes:
     bot:
@@ -30,6 +57,12 @@ oauth_config:
       - links:write
       - files:write
 settings:
+  event_subscriptions:
+    request_url: https://ff-bot-groupme.herokuapp.com/event/
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false
