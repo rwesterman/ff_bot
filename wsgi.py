@@ -152,7 +152,7 @@ def projections():
 	response_status = post_slack_message(channel_id, message)
 	return response_status
 
-@app.route("/standings/", methods=["POST"]):
+@app.route("/standings/", methods=["POST"])
 def standings():
 	try:
 		data = request.form
