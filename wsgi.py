@@ -6,14 +6,17 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from utils.bots import GroupMeBot, SlackBot, DiscordBot
 from utils.commands import Commands
-
-from flask import Flask, request
+import slack_sdk as slack
+from flask import Flask, request, Response
 
 app = Flask(__name__)
 
 # Set up logging here
 logger = logging.getLogger("flask")
 logging.basicConfig(level=logging.DEBUG)
+
+bot_token = os.getenv("SLACK_BOT_TOKEN", None)
+slack_client = slack.WebClient(token=bot_token)
 
 def initialize_bot():
 	"""Initialize a chatbot using the required Environmental Variables
@@ -80,8 +83,10 @@ def event_webhook():
 def help():
 	data = request.get_json(force=True)
 	logger.info(f"Help command: data = {data}")
+	
+	slack_client.chat_postMessage(channel=data["channel_id"], text=commander.commands_help())
 
-	return commander.commands_help()
+	return Response(), 200
 
 
 @app.route("/matchups/", methods=['POST'])

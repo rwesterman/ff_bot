@@ -4,8 +4,8 @@ import re
 from collections import namedtuple
 
 class Commands:
-	def __init__(self, gm_bot, league):
-		self.gm_bot = gm_bot
+	def __init__(self, slack_bot, league):
+		self.slack_bot = slack_bot
 		self.league = league
 
 		self.TeamStats = namedtuple("TeamStats", ["wins", "losses", "team_name", "points_for"])
@@ -47,7 +47,7 @@ class Commands:
 		
 		text = ''
 		# If the first word of a message doesn't start with a "/", then it isn't a command
-		if not cmd_word.startswith("/"):
+		if not cmd_word.startswith("\\"):
 			# Per Stephen's request...
 			matches = re.search(r"(\b69)", gm_data['text'])
 			if matches:
@@ -298,4 +298,5 @@ class Commands:
 
 
 	def send_message(self, text):
-		self.gm_bot.send_message(text)
+		return text
+		# self.slack_bot.send_message(text)
