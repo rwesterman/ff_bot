@@ -21,7 +21,6 @@ class Commands:
 							577750 : 8,
 							399917 : 9}
 
-		self.last_message = ""
 
 	def commands_help(self):
 		text = "You can use the following commands:\n"
@@ -234,8 +233,8 @@ class Commands:
 
 		return text
 
-	def mock_user(self):
-		msg_list = self.last_message.lower().split(" ")
+	def mock_user(self, text):
+		msg_list = text.lower().split(" ")
 		mock_msg_list = []
 		punctuation = {",", "'", '"', "-", ":", ";", "!", "@", "#", "$", "%", "&"}
 		for word in msg_list:
