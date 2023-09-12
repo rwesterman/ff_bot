@@ -48,37 +48,13 @@ bot = init_dict["bot"]
 league = init_dict["league"]
 commander = Commands(league)
 
-# @app.route('/FF', methods=['POST'])
-# def ff_webhook():
-#     """This webhook is called whenever a message is sent to the group chat.
-#     The message is checked for a command, then the message text is sent to the Commands object so the
-#     appropriate action can be taken."""
-#     # data received at GroupMe callback URL
-#     gm_data = request.get_json()
-#     logger.debug("Received {}".format(gm_data))
-
-#     # Don't respond to bots
-#     if not "bot" in gm_data['name'].lower():
-#         response = commander.parse(gm_data)
-#         # Check to see that there's a message to send
-#         if response:
-#             commander.send_message(response)
-
-#     # This prevents a ValueError raised by Flask
-#     return "OK"
-
-@bot.command(name="history", brief="Prints the last 10 messages in the channel")
-async def print_history(context):
-    messages = [message.content async for message in context.channel.history(limit=10)]
-    await context.send("\n".join(messages))
-
-# # https://ff-bot-groupme.herokuapp.com/help/
-# @bot.command(name="help")
-# async def help(context):
-#     logger.debug(f"Help command")
-
-#     help_msg = commander.commands_help()
-#     msg = await context.send(help_msg)
+@bot.command(name="mock", brief="Mock the previous message.")
+async def mock(context):
+    messages = [message.content async for message in context.channel.history(limit=10) if not message.author.bot]
+    if messages:
+        # Mock the previous message. Index 0 will contain the command itself, so we want the next message.
+        mocking = commander.mock_user(messages[1])
+        msg = await context.send(mocking)
 
 @bot.command(name="matchups", brief="Sends the matchups for the current week")
 async def matchups(context):
