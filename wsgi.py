@@ -54,7 +54,7 @@ async def mock(context):
     if messages:
         # Mock the previous message. Index 0 will contain the command itself, so we want the next message.
         mocked_message = messages[1]
-        mock_text = commander.mock_user(messages[1])
+        mock_text = commander.mock_user(mocked_message.content)
         msg = await context.send(mock_text, reference=mocked_message)
 
 @bot.command(name="matchups", brief="Sends the matchups for the current week")
