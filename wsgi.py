@@ -67,15 +67,20 @@ commander = Commands(league)
 #     # This prevents a ValueError raised by Flask
 #     return "OK"
 
-# https://ff-bot-groupme.herokuapp.com/help/
-@bot.command(name="help")
-async def help(context):
-    logger.debug(f"Help command")
+@bot.command(name="history", brief="Prints the last 10 messages in the channel")
+async def print_history(context):
+    messages = [message async for message in context.channel.history(limit=10)]
+    await context.send("\n".join(messages))
 
-    help_msg = commander.commands_help()
-    msg = await context.send(help_msg)
+# # https://ff-bot-groupme.herokuapp.com/help/
+# @bot.command(name="help")
+# async def help(context):
+#     logger.debug(f"Help command")
 
-@bot.command(name="matchups")
+#     help_msg = commander.commands_help()
+#     msg = await context.send(help_msg)
+
+@bot.command(name="matchups", brief="Sends the matchups for the current week")
 async def matchups(context):
     try:
         matchups=commander.get_matchups()
@@ -83,7 +88,7 @@ async def matchups(context):
     except KeyError:
         msg = await context.send("Could not retrieve matchups. This could be due to the ESPN API failing to return season data.")
 
-@bot.command(name="scores")
+@bot.command(name="scores", brief="Sends the scores for the current week")
 async def scores(context):
     try:
         scores=commander.get_scoreboard_short()
@@ -91,7 +96,7 @@ async def scores(context):
     except KeyError:
         msg = await context.send("Could not retrieve scores. This could be due to the ESPN API failing to return season data.")
 
-@bot.command("final")
+@bot.command("final", brief="Final scores for the previous week")
 async def final(context):
     try:
         final_scores=commander.get_final()
@@ -99,7 +104,7 @@ async def final(context):
     except KeyError:
         msg = await context.send(f"Could not retrieve final scores. This could be due to the ESPN API failing to return season data.")
 
-@bot.command(name="projections")
+@bot.command(name="projections", brief="Projected scores for the current week")
 async def projections(context):
     try:
         projections=commander.get_projected_scoreboard()
@@ -107,7 +112,7 @@ async def projections(context):
     except KeyError:
         msg = context.send(f"Could not retrieve projections. This could be due to the ESPN API failing to return season data.")
 
-@bot.command(name="standings")
+@bot.command(name="standings", brief="Current league standings with top-half scoring wins added.")
 async def standings(context, *, cmd_text: str):
     logger.debug(f"Standings command: cmd_text = {cmd_text}")
 
