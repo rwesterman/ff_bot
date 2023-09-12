@@ -90,14 +90,12 @@ async def projections(context):
         msg = context.send(f"Could not retrieve projections. This could be due to the ESPN API failing to return season data.")
 
 @bot.command(name="standings", brief="Current league standings with top-half scoring wins added.")
-async def standings(context, *, cmd_text: str):
-    logger.debug(f"Standings command: cmd_text = {cmd_text}")
-
+async def standings(context):
     try:
         msg = await context.send("Calculating standings...")
         standings=commander.get_standings()
         await msg.edit(content=standings)
-    except KeyError as e:
+    except KeyError:
         msg = await context.send(f"Could not retrieve standings. This could be due to the ESPN API failing to return season data.")
 
 
