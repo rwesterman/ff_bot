@@ -23,45 +23,6 @@ class Commands:
 
 		self.last_message = ""
 
-		# Mapping of GroupMe command to class method
-		self.cmd_dict = {
-			"/help": self.commands_help,
-			"/matchups": self.get_matchups,
-			"/scores": self.get_scoreboard_short,
-			"/close": self.get_close_scores,
-			"/pwr": self.get_power_rankings,
-			"/trophies": self.get_trophies,
-			"/final": self.get_final,
-			"/projections": self.get_projected_scoreboard,
-			"/standings": self.get_standings,
-			"/mock": self.mock_user,
-		}
-		
-
-	def parse(self, gm_data):
-		# Receives groupme data (name of sender, content of message, etc) as json
-
-		# Split the message text into words and make them all lowercase, then take the first word
-		cmd_word = gm_data['text'].lower().split()[0]
-		
-		text = ''
-		# If the first word of a message doesn't start with a "/", then it isn't a command
-		if not cmd_word.startswith("\\"):
-			# Per Stephen's request...
-			matches = re.search(r"(\b69)", gm_data['text'])
-			if matches:
-				text = 'Nice.'
-			self.last_message = gm_data['text']
-			print("Last message is: {}".format(self.last_message))
-			return text 
-		elif cmd_word in self.cmd_dict:
-			# Run the corresponding class method
-			text = self.cmd_dict[cmd_word]()
-		else:
-			text = "Sorry, {} is not a valid command.".format(cmd_word)
-
-		return text
-
 	def commands_help(self):
 		text = "You can use the following commands:\n"
 		text += "/matchups - Returns this week's matchups\n"

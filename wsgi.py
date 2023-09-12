@@ -69,7 +69,7 @@ commander = Commands(league)
 
 @bot.command(name="history", brief="Prints the last 10 messages in the channel")
 async def print_history(context):
-    messages = [message async for message in context.channel.history(limit=10)]
+    messages = [message.content async for message in context.channel.history(limit=10)]
     await context.send("\n".join(messages))
 
 # # https://ff-bot-groupme.herokuapp.com/help/
