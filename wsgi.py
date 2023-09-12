@@ -125,6 +125,6 @@ async def standings(context, *, cmd_text: str):
 
 
 bot_token = os.getenv("DISCORD_BOT_TOKEN", None)
-bot.run()
+bot.run(bot_token)
 
 
