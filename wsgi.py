@@ -50,11 +50,12 @@ commander = Commands(league)
 
 @bot.command(name="mock", brief="Mock the previous message.")
 async def mock(context):
-    messages = [message.content async for message in context.channel.history(limit=10) if not message.author.bot]
+    messages = [message async for message in context.channel.history(limit=10) if not message.author.bot]
     if messages:
         # Mock the previous message. Index 0 will contain the command itself, so we want the next message.
-        mocking = commander.mock_user(messages[1])
-        msg = await context.send(mocking)
+        mocked_message = messages[1]
+        mock_text = commander.mock_user(messages[1])
+        msg = await context.send(mock_text, reference=mocked_message)
 
 @bot.command(name="matchups", brief="Sends the matchups for the current week")
 async def matchups(context):
