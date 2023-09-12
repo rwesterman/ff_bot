@@ -1,5 +1,7 @@
 import requests
 import json
+import discord
+from discord.ext import commands
 
 
 class GroupMeException(Exception):
@@ -63,6 +65,7 @@ class SlackBot(object):
 
 			return r
 
+# TODO: Remove this when discord api bot is working
 class DiscordBot(object):
 	#Creates Discord Bot to send messages
 	def __init__(self, webhook_url):

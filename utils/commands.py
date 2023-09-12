@@ -4,8 +4,7 @@ import re
 from collections import namedtuple
 
 class Commands:
-	def __init__(self, slack_bot, league):
-		self.slack_bot = slack_bot
+	def __init__(self, league):
 		self.league = league
 
 		self.TeamStats = namedtuple("TeamStats", ["wins", "losses", "team_name", "points_for"])
@@ -156,7 +155,7 @@ class Commands:
 		score = ['%s(%s-%s) vs %s(%s-%s)' % (i.home_team.team_name, i.home_team.wins, i.home_team.losses,
 				i.away_team.team_name, i.away_team.wins, i.away_team.losses) for i in matchups
 				if i.away_team]
-		text = ['Matchups'] + score
+		text = ['Matchups:'] + score
 		return '\n'.join(text)
 
 	def get_close_scores(self, week=None):
@@ -175,6 +174,7 @@ class Commands:
 		text = ['Close Scores'] + score
 		return '\n'.join(text)
 
+    # TODO: Add chatGPT interface here to generate team summaries
 	def get_power_rankings(self, week=None):
 		# power rankings requires an integer value, so this grabs the current week for that
 		if not week:
@@ -292,8 +292,3 @@ class Commands:
 			mock_msg_list.append(mock_word)
 
 		return " ".join(mock_msg_list)
-
-
-	def send_message(self, text):
-		return text
-		# self.slack_bot.send_message(text)
