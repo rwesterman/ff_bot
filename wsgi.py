@@ -5,6 +5,7 @@ from espn_api.football import League
 
 # from utils.bots import GroupMeBot, SlackBot, DiscordBot
 from utils.commands import Commands
+from utils.transaction import Transaction
 import discord
 from discord.ext import commands
 
@@ -47,6 +48,17 @@ init_dict = initialize_bot()
 bot = init_dict["bot"]
 league = init_dict["league"]
 commander = Commands(league)
+
+@bot.command(name="waivers", brief="Show recent waiver activity.")
+async def waviers(context):
+    msg = await context.send("Pulling recent waiver activity...")
+    recent_activity = commander.get_recent_activity()
+    formatted_activity = []
+    for activity in recent_activity:
+        transaction = Transaction(activity.actions)
+        formatted_activity.append(transaction.build_message())
+
+    await msg.edit(content="\n".join(formatted_activity))
 
 @bot.command(name="mock", brief="Mock the previous message.")
 async def mock(context):

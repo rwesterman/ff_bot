@@ -1,0 +1,12 @@
+# flyctl launch added from .gitignore
+**/*.pyc
+**/*.egg-info
+**/exports.sh
+**/run*
+**/build
+**/dist
+**/venv
+**/.venv
+**/env
+**/*.zip
+fly.toml
