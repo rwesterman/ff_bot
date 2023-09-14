@@ -99,11 +99,11 @@ class Commands:
                 return False
         return True
 
-    def get_recent_activity(self):
+    def get_recent_activity(self, size=20, offset=0):
         """
         Returns a list of Activity objects from espn_api.football.activity
         """
-        return self.league.recent_activity()
+        return self.league.recent_activity(size=size, offset=offset)
 
     def get_projected_scoreboard(self, week=None):
         #Gets current week's scoreboard projections

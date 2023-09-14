@@ -56,7 +56,7 @@ class Transaction:
             if action_types["add"] > -1:
                 output_str += f":arrow_up: {self.actions[action_types['add']][2].name}"
                 if action_types["drop"] > -1:
-                    output_str += ", "
+                    output_str += "  "
             if action_types["drop"] > -1:
                 output_str += f":arrow_down: {self.actions[action_types['drop']][2].name}"
             if self.bid_amount:

@@ -1,5 +1,6 @@
 import os
 import logging
+from urllib3.exceptions import HTTPError
 
 from espn_api.football import League
 
@@ -49,16 +50,27 @@ bot = init_dict["bot"]
 league = init_dict["league"]
 commander = Commands(league)
 
+# TODO: Add an option to specify how many transactions to show
+# Will need to break them into N at a time
 @bot.command(name="waivers", brief="Show recent waiver activity.")
-async def waviers(context):
-    msg = await context.send("Pulling recent waiver activity...")
-    recent_activity = commander.get_recent_activity()
-    formatted_activity = []
-    for activity in recent_activity:
-        transaction = Transaction(activity.actions)
-        formatted_activity.append(transaction.build_message())
+async def waivers(context):
+    activity_size = 20
+    recent_activity = commander.get_recent_activity(size=activity_size)
+    for i in range(0, activity_size, 10):
+        formatted_activity = []
+        new_msg = await context.send("Pulling recent waiver activity...")
+        for activity in recent_activity[i:i+10]:
+            transaction = Transaction(activity.actions)
+            formatted_activity.append(transaction.build_message())
+        waiver_message = "\n".join(formatted_activity)
+        await new_msg.edit(content=f"\n{waiver_message}")
 
-    await msg.edit(content="\n".join(formatted_activity))
+# TODO: Add an option to specify how many transactions to show
+@waivers.error
+async def waivers_error(context, error):
+    if isinstance(error, HTTPError):
+        msg = context.send(f"Sorry, the message output was too long.")
+
 
 @bot.command(name="mock", brief="Mock the previous message.")
 async def mock(context):
