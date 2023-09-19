@@ -1,25 +1,26 @@
-from utils.players import Projections, SleeperPlayers
-import datetime
-import re
+# from utils.players import Projections, SleeperPlayers
+from cachetools import cached, TTLCache
 from collections import namedtuple
+import logging
 
+logger = logging.getLogger(__name__)
 class Commands:
     def __init__(self, league):
         self.league = league
 
         self.TeamStats = namedtuple("TeamStats", ["wins", "losses", "team_name", "points_for"])
         # A mapping from groupme user ID to team number
-        self.gm_id_to_team = {
-                            11847036 : 0,
-                            4334131 : 1,
-                            11847032 : 2,
-                            30849273 : 3,
-                            11847033 : 4,
-                            2249412 : 5,
-                            11847034 : 6,
-                            26527139 : 7,
-                            577750 : 8,
-                            399917 : 9}
+        # self.gm_id_to_team = {
+        #                     11847036 : 0,
+        #                     4334131 : 1,
+        #                     11847032 : 2,
+        #                     30849273 : 3,
+        #                     11847033 : 4,
+        #                     2249412 : 5,
+        #                     11847034 : 6,
+        #                     26527139 : 7,
+        #                     577750 : 8,
+        #                     399917 : 9}
 
 
     def commands_help(self):
@@ -31,9 +32,15 @@ class Commands:
 
         return text
 
+    # Only allow updating League once every hour
+    @cached(cache=TTLCache(maxsize=1, ttl=60*60*1))
+    def refresh_league(self):
+        logger.info("Refreshed League object!")
+        self.league.refresh()
 
     def get_scoreboard_short(self, week=None):
         #Gets current week's scoreboard
+        self.refresh_league()
         box_scores = self.league.box_scores(week=week)
         score = ['%s %.2f - %.2f %s' % (i.home_team.team_abbrev, i.home_score,
                 i.away_score, i.away_team.team_abbrev) for i in box_scores
@@ -41,7 +48,7 @@ class Commands:
         text = ['Score Update'] + score
         return '\n'.join(text)
 
-    def get_projected_total(self, lineup):
+    def _get_projected_total(self, lineup):
         total_projected = 0
         for i in lineup:
             if i.slot_position != 'BE':
@@ -52,6 +59,7 @@ class Commands:
         return total_projected
 
     def get_standings(self, week=None):
+        self.refresh_league()
         teams = self.league.teams
 
         top_half_totals = {t.team_name: 0 for t in teams}
@@ -94,6 +102,7 @@ class Commands:
 
 
     def all_played(self, lineup):
+        self.refresh_league()
         for i in lineup:
             if i.slot_position != 'BE' and i.game_played < 100:
                 return False
@@ -107,15 +116,17 @@ class Commands:
 
     def get_projected_scoreboard(self, week=None):
         #Gets current week's scoreboard projections
+        self.refresh_league()
         box_scores = self.league.box_scores(week=week)
-        score = ['%s %.2f - %.2f %s' % (i.home_team.team_abbrev, self.get_projected_total(i.home_lineup),
-                                        self.get_projected_total(i.away_lineup), i.away_team.team_abbrev) for i in box_scores
+        score = ['%s %.2f - %.2f %s' % (i.home_team.team_abbrev, self._get_projected_total(i.home_lineup),
+                                        self._get_projected_total(i.away_lineup), i.away_team.team_abbrev) for i in box_scores
                 if i.away_team]
         text = ['Approximate Projected Scores'] + score
         return '\n'.join(text)
 
     def get_matchups(self, week=None):
         #Gets current week's Matchups
+        self.refresh_league()
         matchups = self.league.box_scores(week=week)
 
         score = ['%s(%s-%s) vs %s(%s-%s)' % (i.home_team.team_name, i.home_team.wins, i.home_team.losses,
@@ -126,6 +137,7 @@ class Commands:
 
     def get_close_scores(self, week=None):
         #Gets current closest scores (15.999 points or closer)
+        self.refresh_league()
         matchups = self.league.box_scores(week=week)
         score = []
 
@@ -142,6 +154,7 @@ class Commands:
 
     # TODO: Add chatGPT interface here to generate team summaries
     def get_power_rankings(self, week=None):
+        self.refresh_league()
         # power rankings requires an integer value, so this grabs the current week for that
         if not week:
             week = self.league.current_week
@@ -159,6 +172,7 @@ class Commands:
         return self.league.standings()[-1]
 
     def get_trophies(self, week=None):
+        self.refresh_league()
         # Gets trophies for highest score, lowest score, closest score, and biggest win
         # if not week:
         # 	week = self.power_rankings_week()
@@ -233,6 +247,7 @@ class Commands:
         return '\n'.join(text)
 
     def get_final(self):
+        self.refresh_league()
         week = self.league.current_week - 1
         text = "Final " + self.get_scoreboard_short(week=week)
         text = text + "\n\n" + self.get_trophies(week=week)
