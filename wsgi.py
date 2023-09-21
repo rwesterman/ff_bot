@@ -1,5 +1,6 @@
 import os
 import logging
+from tabulate import tabulate
 from urllib3.exceptions import HTTPError
 
 from espn_api.football import League
@@ -56,20 +57,25 @@ commander = Commands(league)
 # Will need to break them into N at a time
 @bot.command(name="waivers", brief="Show recent waiver activity.")
 async def waivers(ctx):
-    activity_size = 20
+    sort_by_bid = True
+    activity_size = 10
     recent_activity = commander.get_recent_activity(size=activity_size)
+    msg = await ctx.send(f"Pulling recent waiver activity...")
     for i in range(0, activity_size, 10):
         formatted_activity = []
-        new_msg = await ctx.send("Pulling recent waiver activity...")
         for activity in recent_activity[i:i+10]:
             transaction = Transaction(activity.actions)
-            formatted_activity.append(transaction.build_message())
-        waiver_message = "\n".join(formatted_activity)
-        await new_msg.edit(content=f"\n{waiver_message}")
+            formatted_activity.append(transaction.build_message_tabulate())
+        if sort_by_bid:
+            formatted_activity = sorted(formatted_activity, key=lambda x: x[3], reverse=True)
+        waiver_message = tabulate(formatted_activity, headers=["Team", "Added", "Dropped", "Bid"], tablefmt="github")
+        new_msg = await ctx.send(f" \n```{waiver_message}```")
+    
 
 # TODO: Add an option to specify how many transactions to show
 @waivers.error
 async def waivers_error(ctx, error):
+    logger.error(f"Error with waviers\n{error}")
     if isinstance(error, HTTPError):
         msg = ctx.send(f"Sorry, the message output was too long.")
 

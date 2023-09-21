@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 class Transaction:
     """This class is used to format transaction info from ESPN's recent activity into a human-parseable format."""
@@ -46,7 +46,7 @@ class Transaction:
 
         return action_types
 
-    def build_message(self) -> str:
+    def build_message_emoji(self) -> str:
         """Build a message to send to the Discord channel."""
         output_str = ""
         teams_involved = self.teams_involved
@@ -65,3 +65,45 @@ class Transaction:
             output_str = f"There was a trade here but I haven't implemented that logic yet. Raw output is: {self.actions}"
             return output_str
         return output_str
+    
+    def build_message_csv(self) -> str:
+        """Build a message to send as a CSV to the Discord channel."""
+        output_str = ""
+        teams_involved = self.teams_involved
+        action_types = self.transaction_type
+        if len(teams_involved) == 1:
+            output_str += f"{teams_involved.pop()},"
+            if action_types["add"] > -1:
+                output_str += f"{self.actions[action_types['add']][2].name}"
+            output_str += ","
+            if action_types["drop"] > -1:
+                output_str += f"{self.actions[action_types['drop']][2].name}"
+            output_str += ","
+            if self.bid_amount:
+                output_str += f"{self.bid_amount}"
+        else:
+            output_str = f"There was a trade here but I haven't implemented that logic yet. Raw output is: {self.actions}"
+            return output_str
+        return output_str
+
+    def build_message_tabulate(self) -> list[Union[str, int]]:
+        output_list = []
+        teams_involved = self.teams_involved
+        action_types = self.transaction_type
+        if len(teams_involved) == 1:
+            output_list.append(teams_involved.pop())
+            if action_types["add"] > -1:
+                output_list.append(self.actions[action_types['add']][2].name)
+            else:
+                output_list.append("")
+            if action_types["drop"] > -1:
+                output_list.append(self.actions[action_types['drop']][2].name)
+            else:
+                output_list.append("")
+            if self.bid_amount:
+                output_list.append(self.bid_amount)
+            else:
+                output_list.append(0)
+        # Todo: Figure out how to represent trades
+        return output_list
+        
