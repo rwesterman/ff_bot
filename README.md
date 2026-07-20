@@ -193,80 +193,49 @@ No, but I am open to pull requests implementing their API for additional cross p
 
 ## Getting Started for development and testing
 
-These instructions will get you a copy of the project up and running
-on your local machine for development and testing purposes.
+The project uses [uv](https://docs.astral.sh/uv/) for Python installation, dependency locking, environments, and commands.
+Python 3.13 is selected by `.python-version`, and `uv.lock` contains the exact reproducible dependency set.
 
 ### Installing for development
-With Docker:
-```bash
-git clone https://github.com/dtcarls/ff_bot
-
-cd ff_bot
-
-docker build -t ff_bot .
-```
-
-Without Docker:
 
 ```bash
 git clone https://github.com/dtcarls/ff_bot
-
 cd ff_bot
-
-python3 setup.py install
+uv sync --frozen
 ```
 
 ### Environment Variables
 
-- BOT_ID: This is your Bot ID from the GroupMe developers page (REQUIRED IF USING GROUPME)
-- SLACK_WEBHOOK_URL: This is your Webhook URL from the Slack App page (REQUIRED IF USING SLACK)
-- DISCORD_WEBHOOK_URL: This is your Webhook URL from the Discord Settings page (REQUIRED IF USING DISCORD)
-- LEAGUE_ID: This is your ESPN league id (REQUIRED)
-- START_DATE: This is when the bot will start paying attention and sending messages to your chat. (2020-09-10 by default)
-- END_DATE: This is when the bot will stop paying attention and stop sending messages to your chat. (2020-12-30 by default)
-- LEAGUE_YEAR: ESPN League year to look at (2020 by default)
-- TIMEZONE: The timezone that the messages will look to send in. (America/New_York by default)
-- INIT_MSG: The message that the bot will say when it is started (“Hi” by default, can be blank for no message)
-- ESPN_S2: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation
-- SWID: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation
-- ESPN_USERNAME: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation **Experimental, currently not working**
-- ESPN_PASSWORD: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation **Experimental, currently not working**
+- `DISCORD_BOT_TOKEN`: Discord bot token (required).
+- `LEAGUE_ID`: ESPN league ID (required; defaults to `1`).
+- `LEAGUE_YEAR`: ESPN season year (defaults to `2023`).
+- `ESPN_S2`: ESPN session cookie for private leagues.
+- `SWID`: ESPN account ID for private leagues. Braces are added automatically when omitted.
 
 ### Running with Docker
 
-Use BOT_ID if using Groupme, DISCORD_WEBHOOK_URL if using Discord, and SLACK_WEBHOOK_URL if using Slack (or multiple to get messages in multiple places)
-
 ```bash
->>> export BOT_ID=[enter your GroupMe Bot ID]
->>> export WEBHOOK_URL=[enter your Webhook URL]
->>> export LEAGUE_ID=[enter ESPN league ID]
->>> export LEAGUE_YEAR=[enter league year]
->>> cd ff_bot
->>> docker run --rm=True \
--e BOT_ID=$BOT_ID \
--e LEAGUE_ID=$LEAGUE_ID \
--e LEAGUE_YEAR=$LEAGUE_YEAR \
-ff_bot
+docker build -t ff-bot .
+docker run --rm \
+  -e DISCORD_BOT_TOKEN \
+  -e LEAGUE_ID \
+  -e LEAGUE_YEAR \
+  -e ESPN_S2 \
+  -e SWID \
+  ff-bot
 ```
 
 ### Running without Docker
 
-Use BOT_ID if using Groupme, DISCORD_WEBHOOK_URL if using Discord, and SLACK_WEBHOOK_URL if using Slack (or multiple to get messages in multiple places)
-
 ```bash
->>> export BOT_ID=[enter your GroupMe Bot ID]
->>> export WEBHOOK_URL=[enter your Webhook URL]
->>> export LEAGUE_ID=[enter ESPN league ID]
->>> export LEAGUE_YEAR=[enter league year]
->>> cd ff_bot
->>> python3 ff_bot/ff_bot.py
+DISCORD_BOT_TOKEN=... LEAGUE_ID=... LEAGUE_YEAR=... uv run --frozen python main.py
 ```
 
-### Running the tests
+### Running checks
 
-Automated tests for this package are included in the `tests` directory. After installation,
-you can run these tests by changing the directory to the `ff_bot` directory and running the following:
-
-```python3
-python3 setup.py test
+```bash
+uv run --frozen pytest -m "not live"
+uv run --frozen pytest -m live  # Uses the ignored repository-level .env file
+uv run --frozen ruff format --check .
+uv run --frozen ruff check .
 ```

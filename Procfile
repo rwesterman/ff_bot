@@ -1,1 +1,1 @@
-web: gunicorn wsgi:app
+worker: uv run --frozen python main.py

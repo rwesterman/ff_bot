@@ -4,6 +4,8 @@ from collections import namedtuple
 import logging
 
 logger = logging.getLogger(__name__)
+
+
 class Commands:
     def __init__(self, league):
         self.league = league
@@ -22,7 +24,6 @@ class Commands:
         #                     577750 : 8,
         #                     399917 : 9}
 
-
     def commands_help(self):
         text = "You can use the following commands:\n"
         text += "/matchups - Returns this week's matchups\n"
@@ -33,25 +34,27 @@ class Commands:
         return text
 
     # Only allow updating League once every hour
-    @cached(cache=TTLCache(maxsize=1, ttl=60*60*1))
+    @cached(cache=TTLCache(maxsize=1, ttl=60 * 60 * 1))
     def refresh_league(self):
         logger.info("Refreshed League object!")
         self.league.refresh()
 
     def get_scoreboard_short(self, week=None):
-        #Gets current week's scoreboard
+        # Gets current week's scoreboard
         self.refresh_league()
         box_scores = self.league.box_scores(week=week)
-        score = ['%s %.2f - %.2f %s' % (i.home_team.team_abbrev, i.home_score,
-                i.away_score, i.away_team.team_abbrev) for i in box_scores
-                if i.away_team]
-        text = ['Score Update'] + score
-        return '\n'.join(text)
+        score = [
+            "%s %.2f - %.2f %s" % (i.home_team.team_abbrev, i.home_score, i.away_score, i.away_team.team_abbrev)
+            for i in box_scores
+            if i.away_team
+        ]
+        text = ["Score Update"] + score
+        return "\n".join(text)
 
     def _get_projected_total(self, lineup):
         total_projected = 0
         for i in lineup:
-            if i.slot_position != 'BE':
+            if i.slot_position != "BE":
                 if i.points != 0 or i.game_played > 0:
                     total_projected += i.points
                 else:
@@ -79,8 +82,10 @@ class Commands:
         # 3) Most 'Points For'
         standings = sorted(standings, key=lambda x: (x.wins, -x.losses, x.points_for), reverse=True)
 
-        standings_txt = [f"{pos + 1}: {team_name} ({wins} - {losses}) (+{top_half_totals[team_name]})" for \
-            pos, (wins, losses, team_name, pf) in enumerate(standings)]
+        standings_txt = [
+            f"{pos + 1}: {team_name} ({wins} - {losses}) (+{top_half_totals[team_name]})"
+            for pos, (wins, losses, team_name, pf) in enumerate(standings)
+        ]
         text = ["Current Standings:"] + standings_txt
 
         return "\n".join(text)
@@ -88,23 +93,23 @@ class Commands:
     def top_half_wins(self, top_half_totals, week):
         # Todo: Consider caching the scores for earlier weeks so this only has to be run once per day
         box_scores = self.league.box_scores(week=week)
-        
-        scores = [(i.home_score, i.home_team.team_name) for i in box_scores] + \
-                [(i.away_score, i.away_team.team_name) for i in box_scores if i.away_team]
+
+        scores = [(i.home_score, i.home_team.team_name) for i in box_scores] + [
+            (i.away_score, i.away_team.team_name) for i in box_scores if i.away_team
+        ]
 
         scores = sorted(scores, key=lambda tup: tup[0], reverse=True)
 
-        for idx in range(0, len(scores)//2):
+        for idx in range(0, len(scores) // 2):
             points, team_name = scores[idx]
             top_half_totals[team_name] += 1
 
         return top_half_totals
 
-
     def all_played(self, lineup):
         self.refresh_league()
         for i in lineup:
-            if i.slot_position != 'BE' and i.game_played < 100:
+            if i.slot_position != "BE" and i.game_played < 100:
                 return False
         return True
 
@@ -115,28 +120,46 @@ class Commands:
         return self.league.recent_activity(size=size, offset=offset)
 
     def get_projected_scoreboard(self, week=None):
-        #Gets current week's scoreboard projections
+        # Gets current week's scoreboard projections
         self.refresh_league()
         box_scores = self.league.box_scores(week=week)
-        score = ['%s %.2f - %.2f %s' % (i.home_team.team_abbrev, self._get_projected_total(i.home_lineup),
-                                        self._get_projected_total(i.away_lineup), i.away_team.team_abbrev) for i in box_scores
-                if i.away_team]
-        text = ['Approximate Projected Scores'] + score
-        return '\n'.join(text)
+        score = [
+            "%s %.2f - %.2f %s"
+            % (
+                i.home_team.team_abbrev,
+                self._get_projected_total(i.home_lineup),
+                self._get_projected_total(i.away_lineup),
+                i.away_team.team_abbrev,
+            )
+            for i in box_scores
+            if i.away_team
+        ]
+        text = ["Approximate Projected Scores"] + score
+        return "\n".join(text)
 
     def get_matchups(self, week=None):
-        #Gets current week's Matchups
+        # Gets current week's Matchups
         self.refresh_league()
         matchups = self.league.box_scores(week=week)
 
-        score = ['%s(%s-%s) vs %s(%s-%s)' % (i.home_team.team_name, i.home_team.wins, i.home_team.losses,
-                i.away_team.team_name, i.away_team.wins, i.away_team.losses) for i in matchups
-                if i.away_team]
-        text = ['Matchups:'] + score
-        return '\n'.join(text)
+        score = [
+            "%s(%s-%s) vs %s(%s-%s)"
+            % (
+                i.home_team.team_name,
+                i.home_team.wins,
+                i.home_team.losses,
+                i.away_team.team_name,
+                i.away_team.wins,
+                i.away_team.losses,
+            )
+            for i in matchups
+            if i.away_team
+        ]
+        text = ["Matchups:"] + score
+        return "\n".join(text)
 
     def get_close_scores(self, week=None):
-        #Gets current closest scores (15.999 points or closer)
+        # Gets current closest scores (15.999 points or closer)
         self.refresh_league()
         matchups = self.league.box_scores(week=week)
         score = []
@@ -144,13 +167,17 @@ class Commands:
         for i in matchups:
             if i.away_team:
                 diffScore = i.away_score - i.home_score
-                if ( -16 < diffScore <= 0 and not self.all_played(i.away_lineup)) or (0 <= diffScore < 16 and not self.all_played(i.home_lineup)):
-                    score += ['%s %.2f - %.2f %s' % (i.home_team.team_abbrev, i.home_score,
-                            i.away_score, i.away_team.team_abbrev)]
+                if (-16 < diffScore <= 0 and not self.all_played(i.away_lineup)) or (
+                    0 <= diffScore < 16 and not self.all_played(i.home_lineup)
+                ):
+                    score += [
+                        "%s %.2f - %.2f %s"
+                        % (i.home_team.team_abbrev, i.home_score, i.away_score, i.away_team.team_abbrev)
+                    ]
         if not score:
-            return('')
-        text = ['Close Scores'] + score
-        return '\n'.join(text)
+            return ""
+        text = ["Close Scores"] + score
+        return "\n".join(text)
 
     # TODO: Add chatGPT interface here to generate team summaries
     def get_power_rankings(self, week=None):
@@ -158,15 +185,14 @@ class Commands:
         # power rankings requires an integer value, so this grabs the current week for that
         if not week:
             week = self.league.current_week
-        #Gets current week's power rankings
-        #Using 2 step dominance, as well as a combination of points scored and margin of victory.
-        #It's weighted 80/15/5 respectively
+        # Gets current week's power rankings
+        # Using 2 step dominance, as well as a combination of points scored and margin of victory.
+        # It's weighted 80/15/5 respectively
         power_rankings = self.league.power_rankings(week=week)
 
-        score = ['%s - %s' % (i[0], i[1].team_name) for i in power_rankings
-                if i]
-        text = ['Power Rankings'] + score
-        return '\n'.join(text)
+        score = ["%s - %s" % (i[0], i[1].team_name) for i in power_rankings if i]
+        text = ["Power Rankings"] + score
+        return "\n".join(text)
 
     def get_last_place_team(self):
         return self.league.standings()[-1]
@@ -184,15 +210,15 @@ class Commands:
 
         matchups = self.league.box_scores(week=week)
         low_score = 9999
-        low_team_name = ''
+        low_team_name = ""
         high_score = -1
-        high_team_name = ''
+        high_team_name = ""
         closest_score = 9999
-        close_winner = ''
-        close_loser = ''
+        close_winner = ""
+        close_loser = ""
         biggest_blowout = -1
-        blown_out_team_name = ''
-        ownerer_team_name = ''
+        blown_out_team_name = ""
+        ownerer_team_name = ""
 
         for i in matchups:
             if i.home_score > high_score:
@@ -224,12 +250,12 @@ class Commands:
                     ownerer_team_name = i.away_team.team_name
                     blown_out_team_name = i.home_team.team_name
 
-        low_score_str = ['Low score: %s with %.2f points' % (low_team_name, low_score), ""]
-        high_score_str = ['High score: %s with %.2f points' % (high_team_name, high_score), ""]
+        low_score_str = ["Low score: %s with %.2f points" % (low_team_name, low_score), ""]
+        high_score_str = ["High score: %s with %.2f points" % (high_team_name, high_score), ""]
 
         # Check that the closest score is reasonably close
         if closest_score <= 15:
-            close_score_str = ['%s barely beat %s by a margin of %.2f' % (close_winner, close_loser, closest_score), ""]
+            close_score_str = ["%s barely beat %s by a margin of %.2f" % (close_winner, close_loser, closest_score), ""]
         else:
             close_score_str = ["None of these games were especially close. Try to do better next week.", ""]
 
@@ -237,14 +263,18 @@ class Commands:
         # Otherwise, don't report a blowout (but congratulate last place on not losing hard!)
         if biggest_blowout >= 20:
             blowout_str = [
-                '%s blown out by %s by a margin of %.2f' % (blown_out_team_name, ownerer_team_name, biggest_blowout), ""]
+                "%s blown out by %s by a margin of %.2f" % (blown_out_team_name, ownerer_team_name, biggest_blowout),
+                "",
+            ]
         else:
             last_place_team = self.get_last_place_team()
             blowout_str = [
-                "No teams were destroyed this week. (Good job {}!)".format(last_place_team.owner.split(" ")[0].title()), ""]
+                "No teams were destroyed this week. (Good job {}!)".format(last_place_team.owner.split(" ")[0].title()),
+                "",
+            ]
 
-        text = ['Trophies of the week:'] + low_score_str + high_score_str + close_score_str + blowout_str
-        return '\n'.join(text)
+        text = ["Trophies of the week:"] + low_score_str + high_score_str + close_score_str + blowout_str
+        return "\n".join(text)
 
     def get_final(self):
         self.refresh_league()

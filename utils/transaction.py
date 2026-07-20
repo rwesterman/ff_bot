@@ -1,5 +1,6 @@
 from typing import Optional, Union
 
+
 class Transaction:
     """This class is used to format transaction info from ESPN's recent activity into a human-parseable format."""
 
@@ -9,10 +10,12 @@ class Transaction:
             * "TeamName added PlayerName"
             * "TeamName dropped PlayerName"
         * Single trade:
-            * "TeamName sends PlayerName, PlayerName, PlayerName to TeamName2 for PlayerName, PlayerName, PlayerName" (or some emoji simplification)
+            * One team sends players to another team for one or more players
+              (or some emoji simplification)
         * Multiple adds or drops:
             * "TeamName :arrow_up: AddedPlayer, :arrow_down: DroppedPlayer, $BidAmount"
     """
+
     def __init__(self, actions):
         self.actions = actions
 
@@ -20,11 +23,11 @@ class Transaction:
     def teams_involved(self):
         """Return set of all teams involved in the transaction."""
         return {action[0].team_name for action in self.actions}
-    
+
     @property
     def bid_amount(self) -> Optional[int]:
         """Return the bid amount for the transaction."""
-        amount=None
+        amount = None
         for action in self.actions:
             if action[1] == "WAIVER ADDED":
                 amount = action[3]
@@ -62,10 +65,12 @@ class Transaction:
             if self.bid_amount:
                 output_str += f" for :moneybag: {self.bid_amount}"
         else:
-            output_str = f"There was a trade here but I haven't implemented that logic yet. Raw output is: {self.actions}"
+            output_str = (
+                f"There was a trade here but I haven't implemented that logic yet. Raw output is: {self.actions}"
+            )
             return output_str
         return output_str
-    
+
     def build_message_csv(self) -> str:
         """Build a message to send as a CSV to the Discord channel."""
         output_str = ""
@@ -82,7 +87,9 @@ class Transaction:
             if self.bid_amount:
                 output_str += f"{self.bid_amount}"
         else:
-            output_str = f"There was a trade here but I haven't implemented that logic yet. Raw output is: {self.actions}"
+            output_str = (
+                f"There was a trade here but I haven't implemented that logic yet. Raw output is: {self.actions}"
+            )
             return output_str
         return output_str
 
@@ -93,11 +100,11 @@ class Transaction:
         if len(teams_involved) == 1:
             output_list.append(teams_involved.pop())
             if action_types["add"] > -1:
-                output_list.append(self.actions[action_types['add']][2].name)
+                output_list.append(self.actions[action_types["add"]][2].name)
             else:
                 output_list.append("")
             if action_types["drop"] > -1:
-                output_list.append(self.actions[action_types['drop']][2].name)
+                output_list.append(self.actions[action_types["drop"]][2].name)
             else:
                 output_list.append("")
             if self.bid_amount:
@@ -106,4 +113,3 @@ class Transaction:
                 output_list.append(0)
         # Todo: Figure out how to represent trades
         return output_list
-        

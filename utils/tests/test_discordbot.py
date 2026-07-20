@@ -1,29 +1,30 @@
-import unittest
+import pytest
 
 
-import requests_mock
+from utils.bots import (
+    DiscordBot,
+    DiscordException,
+)
 
 
-from utils.bots import (DiscordBot, DiscordException, )
+class TestDiscordBot:
+    """Test DiscordBot class"""
 
+    url = "https://discordapp.com/api/webhooks/123/abc"
+    test_text = "This is a test."
 
-class DiscordTestCase(unittest.TestCase):
-    '''Test DiscordBot class'''
+    def test_send_message(self, requests_mock):
+        """Does the message send successfully?"""
+        requests_mock.post(self.url, status_code=204)
 
-    def setUp(self):
-        self.url = "https://discordapp.com/api/webhooks/123/abc"
-        self.test_bot = DiscordBot(self.url)
-        self.test_text = "This is a test."
+        response = DiscordBot(self.url).send_message(self.test_text)
 
-    @requests_mock.Mocker()
-    def test_send_message(self, m):
-        '''Does the message send successfully?'''
-        m.post(self.url, status_code=204)
-        self.assertEqual(self.test_bot.send_message(self.test_text).status_code, 204)
+        assert response.status_code == 204
+        assert requests_mock.last_request.json() == {"content": "```This is a test.```"}
 
-    @requests_mock.Mocker()
-    def test_bad_bot_id(self, m):
-        '''Does the expected error raise when a bot id is incorrect?'''
-        m.post(self.url, status_code=404)
-        with self.assertRaises(DiscordException):
-            self.test_bot.send_message(self.test_text)
+    def test_bad_webhook_url(self, requests_mock):
+        """Does the expected error raise when a bot id is incorrect?"""
+        requests_mock.post(self.url, status_code=404)
+
+        with pytest.raises(DiscordException, match="WEBHOOK_URL"):
+            DiscordBot(self.url).send_message(self.test_text)

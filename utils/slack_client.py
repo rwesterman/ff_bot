@@ -29,12 +29,7 @@ conversation_id = conversation_id
 try:
     # Call the conversations.history method using the WebClient
     # The client passes the token you included in initialization
-    result = client.conversations_history(
-        channel=conversation_id,
-        inclusive=True,
-        oldest="1610144875.000600",
-        limit=1
-    )
+    result = client.conversations_history(channel=conversation_id, inclusive=True, oldest="1610144875.000600", limit=1)
 
     message = result["messages"][0]
     # Print message text
@@ -56,4 +51,3 @@ except SlackApiError as e:
 
 # except SlackApiError as e:
 #     logger.error("Error creating conversation: {}".format(e))
-

@@ -2,7 +2,7 @@
 **/*.pyc
 **/*.egg-info
 **/exports.sh
-**/run*
+**/run
 **/build
 **/dist
 **/venv
@@ -10,3 +10,5 @@
 **/env
 **/*.zip
 fly.toml
+.git
+.env

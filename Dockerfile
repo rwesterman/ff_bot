@@ -1,10 +1,13 @@
-FROM python:3.10-alpine
+FROM python:3.13-alpine
 
-COPY requirements.txt /
-RUN pip install -r /requirements.txt
+COPY --from=ghcr.io/astral-sh/uv:0.11.24 /uv /uvx /bin/
 
-COPY . /app
 WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
 
-# CMD ["gunicorn", "wsgi:app"]
-CMD ["python", "wsgi.py"]
+COPY . .
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+CMD ["python", "main.py"]
