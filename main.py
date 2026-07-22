@@ -1,148 +1,224 @@
-import os
 import logging
+import os
+from pathlib import Path
+
+import discord
+from discord.ext import commands, tasks
+from dotenv import load_dotenv
+from espn_api.football import League
 from tabulate import tabulate
 from urllib3.exceptions import HTTPError
 
-from espn_api.football import League
-
-# from utils.bots import GroupMeBot, SlackBot, DiscordBot
+from utils.chat_rag import HistoryRagService, format_discord_answer, split_discord_message
 from utils.commands import Commands
 from utils.transaction import Transaction
-import discord
-from discord.ext import commands
 
 
-# Set up logging here
 logger = logging.getLogger("discord_bot")
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
 
-def initialize_bot():
-    """Initialize a chatbot using the required Environmental Variables
-    Return each bot (slack, discord, groupme) and the Leauge object
-    """
-
+def initialize_league():
     league_id = int(os.getenv("LEAGUE_ID", "1"))
-    year = int(os.getenv("LEAGUE_YEAR", 2023))
+    year = int(os.getenv("LEAGUE_YEAR", "2023"))
     swid = os.getenv("SWID", "{1}")
 
-    if swid.find("{", 0) == -1:
+    if "{" not in swid:
         swid = "{" + swid
-    if swid.find("}", -1) == -1:
+    if "}" not in swid:
         swid = swid + "}"
 
     espn_s2 = os.getenv("ESPN_S2", "1")
+    if swid == "{1}" and espn_s2 == "1":
+        return League(league_id, year)
+    return League(league_id, year, espn_s2, swid)
 
-    # For Discord Bot
+
+def initialize_bot():
     intents = discord.Intents.default()
     intents.message_content = True
-    discord_bot = commands.Bot(command_prefix="/", intents=intents)
-    discord_client = discord.Client(intents=intents)
+    return commands.Bot(command_prefix="/", intents=intents)
 
-    if swid == "{1}" and espn_s2 == "1":
-        league = League(league_id, year)
+
+def register_league_commands(bot, commander):
+    @bot.command(name="waivers", brief="Show recent waiver activity.")
+    async def waivers(ctx):
+        sort_by_bid = True
+        activity_size = 10
+        recent_activity = commander.get_recent_activity(size=activity_size)
+        await ctx.send("Pulling recent waiver activity...")
+        for i in range(0, activity_size, 10):
+            formatted_activity = []
+            for activity in recent_activity[i : i + 10]:
+                transaction = Transaction(activity.actions)
+                formatted_activity.append(transaction.build_message_tabulate())
+            if sort_by_bid:
+                formatted_activity = sorted(formatted_activity, key=lambda row: row[3], reverse=True)
+            waiver_message = tabulate(
+                formatted_activity, headers=["Team", "Added", "Dropped", "Bid"], tablefmt="github"
+            )
+            await ctx.send(f" \n```{waiver_message}```")
+
+    @waivers.error
+    async def waivers_error(ctx, error):
+        logger.error("Error with waivers\n%s", error)
+        if isinstance(error, HTTPError):
+            await ctx.send("Sorry, the message output was too long.")
+
+    @bot.command(name="mock", brief="Mock the previous message.")
+    async def mock(ctx):
+        messages = [message async for message in ctx.channel.history(limit=10) if not message.author.bot]
+        if len(messages) > 1:
+            mocked_message = messages[1]
+            mock_text = commander.mock_user(mocked_message.content)
+            await ctx.send(mock_text, reference=mocked_message)
+
+    @bot.command(name="matchups", brief="Sends the matchups for the current week")
+    async def matchups(ctx):
+        try:
+            await ctx.send(commander.get_matchups())
+        except KeyError:
+            await ctx.send(
+                "Could not retrieve matchups. This could be due to the ESPN API failing to return season data."
+            )
+
+    @bot.command(name="scores", brief="Sends the scores for the current week")
+    async def scores(ctx):
+        try:
+            await ctx.send(commander.get_scoreboard_short())
+        except KeyError:
+            await ctx.send(
+                "Could not retrieve scores. This could be due to the ESPN API failing to return season data."
+            )
+
+    @bot.command(name="final", brief="Final scores for the previous week")
+    async def final(ctx):
+        try:
+            await ctx.send(commander.get_final())
+        except KeyError:
+            await ctx.send(
+                "Could not retrieve final scores. This could be due to the ESPN API failing to return season data."
+            )
+
+    @bot.command(name="projections", brief="Projected scores for the current week")
+    async def projections(ctx):
+        try:
+            await ctx.send(commander.get_projected_scoreboard())
+        except KeyError:
+            await ctx.send(
+                "Could not retrieve projections. This could be due to the ESPN API failing to return season data."
+            )
+
+    @bot.command(name="standings", brief="Current league standings with top-half scoring wins added.")
+    async def standings(ctx):
+        try:
+            message = await ctx.send("Calculating standings...")
+            await message.edit(content=commander.get_standings())
+        except KeyError:
+            await ctx.send(
+                "Could not retrieve standings. This could be due to the ESPN API failing to return season data."
+            )
+
+
+def register_rag_commands(bot, rag_service):
+    @bot.command(name="ask", brief="Ask a question about league chat history.")
+    @commands.cooldown(rate=1, per=30, type=commands.BucketType.user)
+    async def ask(ctx, *, question: str):
+        if ctx.guild is None:
+            await ctx.send("Chat-history questions are only available inside the league server.")
+            return
+        status = await ctx.send("Refreshing chat history and searching...")
+        stale = False
+        try:
+            refresh_result = await rag_service.refresh(bot)
+            if refresh_result.unavailable_channel_ids:
+                logger.warning(
+                    "RAG refresh could not access %d configured channels", len(refresh_result.unavailable_channel_ids)
+                )
+        except Exception:
+            logger.exception("Chat history refresh failed")
+            if not rag_service.has_index():
+                await status.edit(
+                    content="I could not refresh or search the chat-history index. Please try again later."
+                )
+                return
+            stale = True
+
+        try:
+            answer = await rag_service.answer(question)
+            parts = split_discord_message(format_discord_answer(answer, stale=stale))
+            await status.edit(content=parts[0])
+            for part in parts[1:]:
+                await ctx.send(part)
+        except Exception:
+            logger.exception("Chat history question failed")
+            await status.edit(content="I could not answer that from the chat history. Please try again later.")
+
+    @ask.error
+    async def ask_error(ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("Usage: `/ask <question>`")
+        elif isinstance(error, commands.CommandOnCooldown):
+            await ctx.send(f"Please wait {error.retry_after:.0f} seconds before asking another question.")
+        else:
+            logger.error("Error with ask command: %s", error)
+
+
+def configure_history_refresh(bot, rag_service):
+    interval_seconds = float(os.getenv("RAG_SYNC_INTERVAL_SECONDS", "3600"))
+
+    @tasks.loop(seconds=interval_seconds)
+    async def refresh_chat_history():
+        try:
+            result = await rag_service.refresh(bot)
+            logger.info(
+                "Chat history refreshed: messages=%d chunks=%d new_embeddings=%d",
+                result.messages_synced,
+                result.index.chunks,
+                result.index.embeddings_created,
+            )
+            if result.unavailable_channel_ids:
+                logger.warning("Could not access %d configured RAG channels", len(result.unavailable_channel_ids))
+        except Exception:
+            logger.exception("Scheduled chat history refresh failed")
+
+    @refresh_chat_history.before_loop
+    async def before_refresh_chat_history():
+        await bot.wait_until_ready()
+
+    @bot.event
+    async def on_ready():
+        logger.info("Connected to Discord as %s", bot.user)
+        if not refresh_chat_history.is_running():
+            refresh_chat_history.start()
+
+    bot.history_refresh_loop = refresh_chat_history
+
+
+def create_application():
+    load_dotenv(Path(__file__).with_name(".env"), override=False)
+    bot = initialize_bot()
+    commander = Commands(initialize_league())
+    register_league_commands(bot, commander)
+
+    database_path = Path(os.getenv("CHAT_HISTORY_DB", "data/chat_history.db"))
+    try:
+        rag_service = HistoryRagService.from_environment(database_path)
+    except RuntimeError as error:
+        logger.warning("Chat-history Q&A is disabled: %s", error)
     else:
-        league = League(league_id, year, espn_s2, swid)
-
-    return {"bot": discord_bot, "league": league, "client": discord_client}
-
-
-# Initialize an instance of the chatbot and create a Commands instance for the bot
-init_dict = initialize_bot()
-bot = init_dict["bot"]
-# client = init_dict["client"]
-league = init_dict["league"]
-commander = Commands(league)
+        register_rag_commands(bot, rag_service)
+        configure_history_refresh(bot, rag_service)
+    return bot
 
 
-# TODO: Add an option to specify how many transactions to show
-# Will need to break them into N at a time
-@bot.command(name="waivers", brief="Show recent waiver activity.")
-async def waivers(ctx):
-    sort_by_bid = True
-    activity_size = 10
-    recent_activity = commander.get_recent_activity(size=activity_size)
-    await ctx.send("Pulling recent waiver activity...")
-    for i in range(0, activity_size, 10):
-        formatted_activity = []
-        for activity in recent_activity[i : i + 10]:
-            transaction = Transaction(activity.actions)
-            formatted_activity.append(transaction.build_message_tabulate())
-        if sort_by_bid:
-            formatted_activity = sorted(formatted_activity, key=lambda x: x[3], reverse=True)
-        waiver_message = tabulate(formatted_activity, headers=["Team", "Added", "Dropped", "Bid"], tablefmt="github")
-        await ctx.send(f" \n```{waiver_message}```")
+def main():
+    bot = create_application()
+    bot_token = os.getenv("DISCORD_BOT_TOKEN")
+    if not bot_token:
+        raise SystemExit("DISCORD_BOT_TOKEN is required")
+    bot.run(bot_token)
 
 
-# TODO: Add an option to specify how many transactions to show
-@waivers.error
-async def waivers_error(ctx, error):
-    logger.error(f"Error with waivers\n{error}")
-    if isinstance(error, HTTPError):
-        await ctx.send("Sorry, the message output was too long.")
-
-
-@bot.command(name="mock", brief="Mock the previous message.")
-async def mock(ctx):
-    messages = [message async for message in ctx.channel.history(limit=10) if not message.author.bot]
-    if messages:
-        # Mock the previous message. Index 0 will contain the command itself, so we want the next message.
-        mocked_message = messages[1]
-        mock_text = commander.mock_user(mocked_message.content)
-        await ctx.send(mock_text, reference=mocked_message)
-
-
-@bot.command(name="matchups", brief="Sends the matchups for the current week")
-async def matchups(ctx):
-    try:
-        matchups = commander.get_matchups()
-        await ctx.send(matchups)
-    except KeyError:
-        await ctx.send("Could not retrieve matchups. This could be due to the ESPN API failing to return season data.")
-
-
-@bot.command(name="scores", brief="Sends the scores for the current week")
-async def scores(ctx):
-    try:
-        scores = commander.get_scoreboard_short()
-        await ctx.send(scores)
-    except KeyError:
-        await ctx.send("Could not retrieve scores. This could be due to the ESPN API failing to return season data.")
-
-
-@bot.command(name="final", brief="Final scores for the previous week")
-async def final(ctx):
-    try:
-        final_scores = commander.get_final()
-        await ctx.send(final_scores)
-    except KeyError:
-        await ctx.send(
-            "Could not retrieve final scores. This could be due to the ESPN API failing to return season data."
-        )
-
-
-@bot.command(name="projections", brief="Projected scores for the current week")
-async def projections(ctx):
-    try:
-        projections = commander.get_projected_scoreboard()
-        await ctx.send(projections)
-    except KeyError:
-        await ctx.send(
-            "Could not retrieve projections. This could be due to the ESPN API failing to return season data."
-        )
-
-
-@bot.command(name="standings", brief="Current league standings with top-half scoring wins added.")
-async def standings(ctx):
-    try:
-        msg = await ctx.send("Calculating standings...")
-        standings = commander.get_standings()
-        await msg.edit(content=standings)
-    except KeyError:
-        msg = await ctx.send(
-            "Could not retrieve standings. This could be due to the ESPN API failing to return season data."
-        )
-
-
-bot_token = os.getenv("DISCORD_BOT_TOKEN", None)
-bot.run(bot_token)
+if __name__ == "__main__":
+    main()

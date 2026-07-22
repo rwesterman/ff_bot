@@ -211,6 +211,9 @@ uv sync --frozen
 - `LEAGUE_YEAR`: ESPN season year (defaults to `2023`).
 - `ESPN_S2`: ESPN session cookie for private leagues.
 - `SWID`: ESPN account ID for private leagues. Braces are added automatically when omitted.
+- `OPENAI_API_KEY`: Used to embed allowlisted chat-history chunks with `text-embedding-3-small`.
+- `DEEPSEEK_API_KEY`: Used by the `/ask` command to answer from retrieved chat excerpts.
+- `RAG_CHANNEL_IDS`: Optional comma-separated Discord channel and thread allowlist.
 
 ### Running with Docker
 
@@ -230,6 +233,45 @@ docker run --rm \
 ```bash
 DISCORD_BOT_TOKEN=... LEAGUE_ID=... LEAGUE_YEAR=... uv run --frozen python main.py
 ```
+
+### Caching Discord history
+
+The history sync connects to Discord without sending messages and stores every readable text-channel, thread, and
+voice-channel message in an ignored SQLite database. The initial sync retrieves all history; later runs request only
+messages newer than each channel's cached Discord message ID.
+
+```bash
+# Incremental sync (also performs the initial import when the database is absent)
+uv run --frozen python -m scripts.sync_discord_history
+
+# Explicitly refetch all retained Discord history
+uv run --frozen python -m scripts.sync_discord_history --full
+```
+
+The local default is `data/chat_history.db`. Override it with `CHAT_HISTORY_DB`, such as
+`CHAT_HISTORY_DB=/data/chat_history.db` when `/data` is a persistent Fly volume. The database contains private message
+content and must never be committed or copied into the container image.
+
+### Asking questions about chat history
+
+The bot's `/ask <question>` command incrementally refreshes the allowlisted Discord channels, combines SQLite FTS5
+keyword search with 512-dimension semantic search, and asks DeepSeek to answer only from the retrieved excerpts. Answers
+include links to the source Discord messages. The initial indexing operation sends every allowlisted conversation chunk
+to OpenAI; later refreshes embed only new or changed chunks.
+
+To build or update the index and test a question locally without connecting to or posting in Discord:
+
+```bash
+uv run --frozen python -m scripts.ask_chat_history "What is the tiebreaker for playoff positions?"
+```
+
+The command loads the ignored repository-level `.env`, uses the local `data/chat_history.db`, and prints only the answer
+and source links rather than raw retrieved excerpts.
+
+Production stores the SQLite database on the Fly volume and runs it under Litestream. Create a private Tigris bucket
+with `fly storage create --app ff-bot`; Fly supplies `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and
+`BUCKET_NAME` as secrets. `litestream.yml` replicates database changes every minute and retains daily snapshots for 30
+days. The OpenAI and DeepSeek keys must also be configured as Fly secrets.
 
 ### Running checks
 

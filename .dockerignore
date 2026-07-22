@@ -12,3 +12,8 @@
 fly.toml
 .git
 .env
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+utils/tests
+data

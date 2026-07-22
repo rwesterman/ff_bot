@@ -10,6 +10,10 @@ The README and some supporting files still describe the project's older GroupMe,
 
 - `main.py` — runtime entry point and Discord command handlers. Importing this module initializes an ESPN league and ultimately calls `bot.run()`, so do not import it from unit tests or utility scripts without first refactoring those side effects behind a main function.
 - `utils/commands.py` — chat-independent fantasy-football calculations and text formatting. Most feature logic belongs here and should be tested with a fake league object.
+- `utils/chat_history.py` — SQLite schema and idempotent, incremental Discord channel-history persistence.
+- `utils/chat_rag.py` — allowlisted conversation chunking, OpenAI embeddings, hybrid SQLite retrieval, DeepSeek answers, and Discord source formatting.
+- `scripts/sync_discord_history.py` — read-only Discord history importer. It sends no Discord messages and defaults to the ignored `data/chat_history.db` path.
+- `scripts/ask_chat_history.py` — local, Discord-free question runner over the cached history database.
 - `utils/transaction.py` — formats ESPN recent-activity actions for the waiver table. Trades are not implemented.
 - `utils/bots.py` — legacy synchronous GroupMe, Slack, and Discord webhook clients. The active Discord bot does not use these classes.
 - `utils/players.py` — experimental Sleeper player/projection helpers; it expects a top-level `players.json`, which is not committed.
@@ -51,6 +55,7 @@ Private ESPN leagues also require `ESPN_S2` and `SWID`. `main.py` adds missing b
 - Keep tests on pytest fixtures and plain `assert` statements; do not add unittest-style classes or live ESPN credentials.
 - Live ESPN tests are marked `live`, load credentials from the ignored repository-level `.env`, and must never import
   `main.py` or initialize Discord. Run them explicitly with `uv run --frozen pytest -m live`.
+- RAG tests must inject fake OpenAI-compatible clients. Do not make paid API calls in the deterministic test suite.
 - Test and lint dependencies are declared in the `dev` dependency group and installed by the default `uv sync` command.
 - Do not import `main.py` during tests: it connects to ESPN during module initialization and starts a Discord client.
 
@@ -69,6 +74,8 @@ Private ESPN leagues also require `ESPN_S2` and `SWID`. `main.py` adds missing b
 - Never add real Discord tokens, ESPN cookies, Slack URLs, GroupMe IDs, or league credentials to source, tests, logs, or documentation. Use environment variables and obvious dummy values.
 - Historical revisions contained credential-like values. Do not restore or reproduce them; use fixtures and obvious placeholders.
 - Running `main.py`, `utils/players.py`, or `utils/slack_client.py` can make external requests; use mocks unless an explicitly requested integration test provides authorized credentials.
+- Discord history databases contain private chat content. Keep `data/` ignored, never print stored content during diagnostics, and use a persistent volume rather than an image layer in production.
+- Only channel IDs in `RAG_CHANNEL_IDS` may be indexed. OpenAI receives all allowlisted chunks for embedding; DeepSeek receives only retrieved excerpts.
 - Before changing production output, verify both the formatted content and platform limits. The bot's responses are user-visible league messages.
 
 ## Before handing off changes

@@ -9,4 +9,17 @@ primary_region = "dfw"
 [build]
 
 [processes]
-  worker = "python main.py"
+  worker = "litestream replicate -restore-if-db-not-exists"
+
+[env]
+  CHAT_HISTORY_DB = "/data/chat_history.db"
+  DEEPSEEK_MODEL = "deepseek-v4-flash"
+  OPENAI_EMBEDDING_DIMENSIONS = "512"
+  OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+  RAG_CHANNEL_IDS = "604075794620219414,1145771776257818674,1252383178912567466,1147256554144419881,1145771716216356964,1151148913756213270,1278382036930789550,1386706556929966131,1147257515927674930,1154131955441471640,1154133577357869076"
+  RAG_SYNC_INTERVAL_SECONDS = "3600"
+
+[[mounts]]
+  source = "ff_bot_data"
+  destination = "/data"
+  processes = ["worker"]
