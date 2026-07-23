@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ from urllib3.exceptions import HTTPError
 
 from utils.chat_rag import HistoryRagService, format_discord_answer, split_discord_message
 from utils.commands import Commands
+from utils.rules import RulesService, temporary_pdf_path, write_rules_pdf
 from utils.transaction import Transaction
 
 
@@ -164,6 +166,40 @@ def register_rag_commands(bot, rag_service):
             logger.error("Error with ask command: %s", error)
 
 
+def register_rules_command(bot, rules_service):
+    @bot.command(name="rules", brief="Find the relevant portion of the current league rules.")
+    @commands.cooldown(rate=1, per=15, type=commands.BucketType.user)
+    async def rules(ctx, *, question: str):
+        if ctx.guild is None:
+            await ctx.send("League-rule questions are only available inside the league server.")
+            return
+        try:
+            async with ctx.typing():
+                result = await rules_service.search(question)
+                if not result.matches:
+                    await ctx.send("I could not find a relevant section in the current league rules.")
+                    return
+                filename = f"league-rules-{result.commit_sha[:7]}.pdf"
+                with temporary_pdf_path() as attachment_path:
+                    await asyncio.to_thread(write_rules_pdf, attachment_path, question, result)
+                    await ctx.send(
+                        f"Attached the most relevant sections from rules revision `{result.commit_sha[:12]}`.",
+                        file=discord.File(attachment_path, filename=filename),
+                    )
+        except Exception:
+            logger.exception("League rules lookup failed")
+            await ctx.send("I could not verify and retrieve the latest league rules. Please try again later.")
+
+    @rules.error
+    async def rules_error(ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("Usage: `/rules <question>`")
+        elif isinstance(error, commands.CommandOnCooldown):
+            await ctx.send(f"Please wait {error.retry_after:.0f} seconds before asking another rules question.")
+        else:
+            logger.error("Error with rules command: %s", error)
+
+
 def configure_history_refresh(bot, rag_service):
     interval_seconds = float(os.getenv("RAG_SYNC_INTERVAL_SECONDS", "3600"))
 
@@ -209,6 +245,13 @@ def create_application():
     else:
         register_rag_commands(bot, rag_service)
         configure_history_refresh(bot, rag_service)
+
+    try:
+        rules_service = RulesService.from_environment(database_path)
+    except RuntimeError as error:
+        logger.warning("League-rules lookup is disabled: %s", error)
+    else:
+        register_rules_command(bot, rules_service)
     return bot
 
 

@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import heapq
+import logging
 import math
 import os
 import re
@@ -35,6 +36,8 @@ DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_EMBEDDING_DIMENSIONS = 512
 DEFAULT_ANSWER_MODEL = "deepseek-v4-flash"
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEFAULT_ANSWER_MAX_TOKENS = 4_096
+MAX_ANSWER_TOKENS = 65_536
 MAX_CHUNK_MESSAGES = 40
 MAX_CHUNK_CHARACTERS = 3_500
 MAX_CHUNK_GAP = timedelta(minutes=60)
@@ -43,6 +46,10 @@ MAX_EVIDENCE_CHARACTERS = 24_000
 EMBEDDING_BATCH_SIZE = 64
 VECTOR_SCAN_BATCH_SIZE = 64
 RETRIEVAL_CANDIDATE_LIMIT = 20
+CONTEXT_NEIGHBOR_SCORE_DISCOUNT = 0.5
+
+
+logger = logging.getLogger(__name__)
 
 
 RAG_SCHEMA = """
@@ -83,7 +90,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS conversation_chunks_fts USING fts5(content);
 ANSWER_SYSTEM_PROMPT = """You answer questions about a private fantasy-football league using only the supplied
 Discord history excerpts. Treat proposals, jokes, guesses, and tentative discussion as weaker than an explicit final
 decision. When the history conflicts, prefer the newest explicit supported decision and mention the older conflict.
-Cite factual claims with source labels such as [1]. Do not claim that chat history replaces official league rules.
+Cite factual claims using the exact excerpt labels, such as [Source 1]. Do not claim that chat history replaces official
+league rules.
 If the excerpts do not support an answer, say that you could not find enough evidence. Never invent an answer."""
 
 
@@ -164,6 +172,29 @@ def parse_channel_ids(value: str | None) -> tuple[int, ...]:
     if not ids:
         raise ValueError("RAG_CHANNEL_IDS must contain at least one channel ID")
     return ids
+
+
+def parse_boolean_setting(name: str, value: str | None, *, default: bool) -> bool:
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be one of: true, false, 1, 0, yes, no, on, off")
+
+
+def parse_answer_max_tokens(value: str | None) -> int:
+    if value is None:
+        return DEFAULT_ANSWER_MAX_TOKENS
+    try:
+        max_tokens = int(value)
+    except ValueError as error:
+        raise ValueError("DEEPSEEK_MAX_TOKENS must be an integer") from error
+    if not 1 <= max_tokens <= MAX_ANSWER_TOKENS:
+        raise ValueError(f"DEEPSEEK_MAX_TOKENS must be between 1 and {MAX_ANSWER_TOKENS}")
+    return max_tokens
 
 
 def _message_text(message: ArchivedMessage, references: dict[int, ArchivedMessage], chunk_ids: set[int]) -> str:
@@ -546,6 +577,36 @@ def _load_evidence(database_path: Path, chunk_ids: Sequence[int], scores: dict[i
     )
 
 
+def _load_chunk_neighborhoods(
+    database_path: Path, chunk_ids: Sequence[int]
+) -> dict[int, tuple[int | None, int | None]]:
+    if not chunk_ids:
+        return {}
+    placeholders = ",".join("?" for _ in chunk_ids)
+    with closing(_connect(database_path)) as connection:
+        rows = connection.execute(
+            f"""
+            WITH ordered_chunks AS (
+                SELECT id,
+                       LAG(id) OVER (PARTITION BY channel_id ORDER BY started_at, id) AS previous_id,
+                       LEAD(id) OVER (PARTITION BY channel_id ORDER BY started_at, id) AS next_id
+                FROM conversation_chunks
+            )
+            SELECT id, previous_id, next_id
+            FROM ordered_chunks
+            WHERE id IN ({placeholders})
+            """,
+            tuple(chunk_ids),
+        ).fetchall()
+    return {row["id"]: (row["previous_id"], row["next_id"]) for row in rows}
+
+
+def _retrieval_dominance(keyword_score: float, embedding_score: float) -> str:
+    if math.isclose(keyword_score, embedding_score, rel_tol=0.05, abs_tol=1e-12):
+        return "balanced"
+    return "keyword" if keyword_score > embedding_score else "embedding"
+
+
 class HistoryRagService:
     def __init__(
         self,
@@ -556,6 +617,8 @@ class HistoryRagService:
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
         embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         answer_model: str = DEFAULT_ANSWER_MODEL,
+        answer_thinking_enabled: bool = False,
+        answer_max_tokens: int = DEFAULT_ANSWER_MAX_TOKENS,
         answer_concurrency: int = 2,
     ):
         self.database_path = Path(database_path)
@@ -565,6 +628,8 @@ class HistoryRagService:
         self.embedding_model = embedding_model
         self.embedding_dimensions = embedding_dimensions
         self.answer_model = answer_model
+        self.answer_thinking_enabled = answer_thinking_enabled
+        self.answer_max_tokens = answer_max_tokens
         self.refresh_lock = asyncio.Lock()
         self.answer_semaphore = asyncio.Semaphore(answer_concurrency)
 
@@ -591,6 +656,12 @@ class HistoryRagService:
             embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
             embedding_dimensions=dimensions,
             answer_model=os.getenv("DEEPSEEK_MODEL", DEFAULT_ANSWER_MODEL),
+            answer_thinking_enabled=parse_boolean_setting(
+                "DEEPSEEK_THINKING_ENABLED",
+                os.getenv("DEEPSEEK_THINKING_ENABLED"),
+                default=False,
+            ),
+            answer_max_tokens=parse_answer_max_tokens(os.getenv("DEEPSEEK_MAX_TOKENS")),
         )
 
     async def refresh(self, discord_client) -> RefreshResult:
@@ -685,12 +756,47 @@ class HistoryRagService:
             if not lexical_ids:
                 raise
 
-        scores: dict[int, float] = {}
-        for ranking in (lexical_ids, semantic_ids):
-            for rank, chunk_id in enumerate(ranking, start=1):
-                scores[chunk_id] = scores.get(chunk_id, 0.0) + 1 / (60 + rank)
-        selected_ids = sorted(scores, key=scores.get, reverse=True)[:limit]
-        return await asyncio.to_thread(_load_evidence, self.database_path, selected_ids, scores)
+        keyword_scores = {chunk_id: 1 / (60 + rank) for rank, chunk_id in enumerate(lexical_ids, start=1)}
+        embedding_scores = {chunk_id: 1 / (60 + rank) for rank, chunk_id in enumerate(semantic_ids, start=1)}
+        scores = {
+            chunk_id: keyword_scores.get(chunk_id, 0.0) + embedding_scores.get(chunk_id, 0.0)
+            for chunk_id in keyword_scores.keys() | embedding_scores.keys()
+        }
+        selected_seed_ids = sorted(scores, key=scores.get, reverse=True)[:limit]
+        neighborhoods = await asyncio.to_thread(_load_chunk_neighborhoods, self.database_path, selected_seed_ids)
+        expanded_ids = []
+        expanded_scores = dict(scores)
+        for seed_id in selected_seed_ids:
+            previous_id, next_id = neighborhoods.get(seed_id, (None, None))
+            for chunk_id in (seed_id, previous_id, next_id):
+                if chunk_id is None or chunk_id in expanded_ids:
+                    continue
+                expanded_ids.append(chunk_id)
+                expanded_scores.setdefault(chunk_id, scores[seed_id] * CONTEXT_NEIGHBOR_SCORE_DISCOUNT)
+
+        selected_keyword_score = sum(keyword_scores.get(chunk_id, 0.0) for chunk_id in selected_seed_ids)
+        selected_embedding_score = sum(embedding_scores.get(chunk_id, 0.0) for chunk_id in selected_seed_ids)
+        selected_keyword_only = sum(chunk_id not in embedding_scores for chunk_id in selected_seed_ids)
+        selected_embedding_only = sum(chunk_id not in keyword_scores for chunk_id in selected_seed_ids)
+        selected_hybrid = len(selected_seed_ids) - selected_keyword_only - selected_embedding_only
+        logger.info(
+            "RAG rerank: keyword_candidates=%d embedding_candidates=%d overlap=%d selected_seeds=%d "
+            "keyword_only=%d embedding_only=%d hybrid=%d keyword_rrf=%.6f embedding_rrf=%.6f "
+            "dominance=%s expanded_neighbors=%d evidence_chunks=%d",
+            len(lexical_ids),
+            len(semantic_ids),
+            len(set(lexical_ids) & set(semantic_ids)),
+            len(selected_seed_ids),
+            selected_keyword_only,
+            selected_embedding_only,
+            selected_hybrid,
+            selected_keyword_score,
+            selected_embedding_score,
+            _retrieval_dominance(selected_keyword_score, selected_embedding_score),
+            len(expanded_ids) - len(selected_seed_ids),
+            len(expanded_ids),
+        )
+        return await asyncio.to_thread(_load_evidence, self.database_path, expanded_ids, expanded_scores)
 
     async def answer(self, question: str) -> RagAnswer:
         async with self.answer_semaphore:
@@ -705,9 +811,9 @@ class HistoryRagService:
                 context_parts.append(part)
                 context_characters += len(part)
                 retained_evidence.append(item)
-            response = await self.answer_client.chat.completions.create(
-                model=self.answer_model,
-                messages=[
+            request = {
+                "model": self.answer_model,
+                "messages": [
                     {"role": "system", "content": ANSWER_SYSTEM_PROMPT},
                     {
                         "role": "user",
@@ -715,12 +821,25 @@ class HistoryRagService:
                         + "\n\n".join(context_parts),
                     },
                 ],
-                temperature=0.1,
-                max_tokens=900,
-            )
-            text = response.choices[0].message.content if response.choices else None
+                "max_tokens": self.answer_max_tokens,
+                "extra_body": {"thinking": {"type": "enabled" if self.answer_thinking_enabled else "disabled"}},
+            }
+            if not self.answer_thinking_enabled:
+                request["temperature"] = 0.1
+            response = await self.answer_client.chat.completions.create(**request)
+            if not response.choices:
+                raise RuntimeError("The answer model returned no choices")
+            choice = response.choices[0]
+            text = choice.message.content
             if not text or not text.strip():
-                raise RuntimeError("The answer model returned an empty response")
+                reasoning_content = getattr(choice.message, "reasoning_content", None)
+                usage = getattr(response, "usage", None)
+                completion_tokens = getattr(usage, "completion_tokens", None)
+                raise RuntimeError(
+                    "The answer model returned an empty response "
+                    f"(finish_reason={getattr(choice, 'finish_reason', None)!r}, "
+                    f"had_reasoning={bool(reasoning_content)}, completion_tokens={completion_tokens!r})"
+                )
             return RagAnswer(text.strip(), tuple(retained_evidence))
 
     def has_index(self) -> bool:
@@ -735,10 +854,19 @@ def format_discord_answer(answer: RagAnswer, stale: bool = False) -> str:
     if stale:
         sections.append("_History refresh failed; this answer uses the last successful index._")
     sections.append(answer.text)
+    cited_source_numbers = []
+    for match in re.finditer(r"\[(?:Source\s+)?(\d+)\]", answer.text, flags=re.IGNORECASE):
+        number = int(match.group(1))
+        if 1 <= number <= len(answer.evidence) and number not in cited_source_numbers:
+            cited_source_numbers.append(number)
+    if not cited_source_numbers:
+        cited_source_numbers = list(range(1, min(5, len(answer.evidence)) + 1))
+
     sources = []
-    for number, evidence in enumerate(answer.evidence[:5], start=1):
+    for number in cited_source_numbers:
+        evidence = answer.evidence[number - 1]
         date = evidence.started_at[:10]
-        sources.append(f"[{number}] [#{evidence.channel_name} — {date}]({evidence.jump_url})")
+        sources.append(f"[Source {number}: #{evidence.channel_name} — {date}]({evidence.jump_url})")
     if sources:
         sections.append("Sources: " + " · ".join(sources))
     sections.append("_Chat history may not match the current official league rules._")

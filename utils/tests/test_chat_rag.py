@@ -4,14 +4,19 @@ from types import SimpleNamespace
 
 import pytest
 
+import utils.chat_rag as chat_rag
 from utils.chat_history import HistoryDatabase
 from utils.chat_rag import (
     ANSWER_SYSTEM_PROMPT,
     EMBEDDING_BATCH_SIZE,
     ArchivedMessage,
+    Evidence,
     HistoryRagService,
+    RagAnswer,
     build_conversation_chunks,
     format_discord_answer,
+    parse_answer_max_tokens,
+    parse_boolean_setting,
     split_discord_message,
 )
 
@@ -43,18 +48,21 @@ class FakeEmbeddingClient:
 
 
 class FakeCompletions:
-    def __init__(self):
+    def __init__(self, response=None):
         self.calls = []
+        self.response = response
 
     async def create(self, **kwargs):
         self.calls.append(kwargs)
+        if self.response is not None:
+            return self.response
         message = SimpleNamespace(content="Head-to-head record is the documented tiebreaker [1].")
-        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")])
 
 
 class FakeAnswerClient:
-    def __init__(self):
-        self.chat = SimpleNamespace(completions=FakeCompletions())
+    def __init__(self, response=None):
+        self.chat = SimpleNamespace(completions=FakeCompletions(response=response))
 
 
 def archived_message(message_id, content, *, created_at=None, channel_id=10, reference_message_id=None):
@@ -120,14 +128,71 @@ def seed_sparse_database(path, message_count):
         )
 
 
-def make_service(path, embedding_client=None):
+def seed_neighborhood_database(path):
+    with HistoryDatabase(path) as database:
+        database.connection.execute(
+            "INSERT INTO guilds (id, name, synced_at) VALUES (1, 'League', '2024-01-01T00:00:00+00:00')"
+        )
+        database.connection.execute(
+            "INSERT INTO channels (id, guild_id, name, kind) VALUES (10, 1, 'league-rules', 'text')"
+        )
+        database.connection.executemany(
+            """
+            INSERT INTO messages (
+                id, guild_id, channel_id, author_id, author_name, author_is_bot, content,
+                created_at, message_type, reference_message_id
+            ) VALUES (?, 1, 10, 100, 'Alice', 0, ?, ?, 'default', NULL)
+            """,
+            [
+                (1, "Earlier playoff discussion.", "2024-01-01T12:00:00+00:00"),
+                (2, "The playoff tiebreaker is head-to-head record.", "2024-01-02T12:00:00+00:00"),
+                (3, "Later confirmation of the final rule.", "2024-01-03T12:00:00+00:00"),
+            ],
+        )
+
+
+def make_service(path, embedding_client=None, answer_client=None, **service_options):
     return HistoryRagService(
         database_path=path,
         channel_ids=(10,),
         embedding_client=embedding_client or FakeEmbeddingClient(),
-        answer_client=FakeAnswerClient(),
+        answer_client=answer_client or FakeAnswerClient(),
         embedding_dimensions=4,
+        **service_options,
     )
+
+
+@pytest.mark.parametrize("value", ["1", "true", "YES", "on"])
+def test_parse_boolean_setting_accepts_enabled_values(value):
+    assert parse_boolean_setting("SETTING", value, default=False) is True
+
+
+@pytest.mark.parametrize("value", ["0", "false", "NO", "off"])
+def test_parse_boolean_setting_accepts_disabled_values(value):
+    assert parse_boolean_setting("SETTING", value, default=True) is False
+
+
+def test_answer_environment_settings_are_validated():
+    assert parse_boolean_setting("SETTING", None, default=False) is False
+    assert parse_answer_max_tokens(None) == 4_096
+    assert parse_answer_max_tokens("8192") == 8_192
+    with pytest.raises(ValueError, match="DEEPSEEK_MAX_TOKENS must be between"):
+        parse_answer_max_tokens("0")
+    with pytest.raises(ValueError, match="SETTING must be one of"):
+        parse_boolean_setting("SETTING", "sometimes", default=False)
+
+
+def test_service_reads_answer_settings_from_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+    monkeypatch.setenv("DEEPSEEK_THINKING_ENABLED", "true")
+    monkeypatch.setenv("DEEPSEEK_MAX_TOKENS", "8192")
+    monkeypatch.setattr(chat_rag, "AsyncOpenAI", lambda **kwargs: SimpleNamespace(configuration=kwargs))
+
+    service = HistoryRagService.from_environment(tmp_path / "history.db")
+
+    assert service.answer_thinking_enabled is True
+    assert service.answer_max_tokens == 8_192
 
 
 def test_chunking_overlaps_size_splits_but_not_time_gaps():
@@ -218,6 +283,96 @@ def test_hybrid_retrieval_and_answer_include_grounding_and_sources(tmp_path):
     call = service.answer_client.chat.completions.calls[0]
     assert call["messages"][0]["content"] == ANSWER_SYSTEM_PROMPT
     assert "playoff tiebreaker" in call["messages"][1]["content"]
+    assert call["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert call["max_tokens"] == 4_096
+    assert call["temperature"] == 0.1
+
+
+def test_discord_answer_links_the_sources_cited_by_the_model():
+    evidence = tuple(
+        Evidence(
+            chunk_id=number,
+            guild_id=1,
+            channel_id=10,
+            channel_name="general-chat",
+            first_message_id=number,
+            started_at=f"2025-01-{number:02d}T12:00:00+00:00",
+            ended_at=f"2025-01-{number:02d}T12:05:00+00:00",
+            content=f"Excerpt {number}",
+            score=1.0,
+        )
+        for number in range(1, 14)
+    )
+    answer = RagAnswer(
+        "The later discussion [Source 13] conflicts with the playoff rule [Source 10].",
+        evidence,
+    )
+
+    formatted = format_discord_answer(answer)
+
+    assert "[Source 13: #general-chat — 2025-01-13]" in formatted
+    assert "https://discord.com/channels/1/10/13" in formatted
+    assert "[Source 10: #general-chat — 2025-01-10]" in formatted
+    assert "https://discord.com/channels/1/10/10" in formatted
+    assert "[Source 1:" not in formatted
+
+
+def test_retrieval_expands_adjacent_chunks_and_logs_rerank_dominance(tmp_path, caplog):
+    path = tmp_path / "history.db"
+    seed_neighborhood_database(path)
+    service = make_service(path)
+    asyncio.run(service.index())
+
+    with caplog.at_level("INFO", logger="utils.chat_rag"):
+        evidence = asyncio.run(service.retrieve("What is the playoff tiebreaker?", limit=1))
+
+    assert len(evidence) == 3
+    assert "playoff tiebreaker is head-to-head" in evidence[0].content
+    assert "Earlier playoff discussion" in evidence[1].content
+    assert "Later confirmation" in evidence[2].content
+    assert "selected_seeds=1" in caplog.text
+    assert "hybrid=1" in caplog.text
+    assert "dominance=balanced" in caplog.text
+    assert "expanded_neighbors=2" in caplog.text
+    assert "evidence_chunks=3" in caplog.text
+
+
+def test_answer_enables_thinking_and_uses_configured_token_limit(tmp_path):
+    path = tmp_path / "history.db"
+    seed_database(path)
+    service = make_service(path, answer_thinking_enabled=True, answer_max_tokens=8_192)
+    asyncio.run(service.index())
+
+    asyncio.run(service.answer("What is the playoff tiebreaker?"))
+
+    call = service.answer_client.chat.completions.calls[0]
+    assert call["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert call["max_tokens"] == 8_192
+    assert "temperature" not in call
+
+
+def test_answer_reports_empty_model_response_metadata_without_reasoning_text(tmp_path):
+    path = tmp_path / "history.db"
+    seed_database(path)
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content="", reasoning_content="private model reasoning"),
+                finish_reason="length",
+            )
+        ],
+        usage=SimpleNamespace(completion_tokens=900),
+    )
+    service = make_service(path, answer_client=FakeAnswerClient(response=response))
+    asyncio.run(service.index())
+
+    with pytest.raises(RuntimeError) as error:
+        asyncio.run(service.answer("What is the playoff tiebreaker?"))
+
+    assert "finish_reason='length'" in str(error.value)
+    assert "had_reasoning=True" in str(error.value)
+    assert "completion_tokens=900" in str(error.value)
+    assert "private model reasoning" not in str(error.value)
 
 
 def test_split_discord_message_respects_limit():
