@@ -2,16 +2,21 @@
 
 ## Project overview
 
-This repository runs a Python Discord bot that reports ESPN fantasy-football data. The active entry point is `main.py`: it creates an `espn_api.football.League`, registers `/waivers`, `/mock`, `/matchups`, `/scores`, `/final`, `/projections`, and `/standings` commands with `discord.py`, and starts the bot using `DISCORD_BOT_TOKEN`.
+This repository runs a Python Discord bot that reports ESPN fantasy-football data. The active entry point is `main.py`:
+it creates an `espn_api.football.League`, registers the league commands plus `/ask` and `/rules` with `discord.py`, and
+starts the bot using `DISCORD_BOT_TOKEN`.
 
 The README and some supporting files still describe the project's older GroupMe, Slack, webhook, Heroku, and scheduled-message implementations. Treat the code as the source of truth when those descriptions disagree with the current implementation.
 
 ## Repository map
 
-- `main.py` — runtime entry point and Discord command handlers. Importing this module initializes an ESPN league and ultimately calls `bot.run()`, so do not import it from unit tests or utility scripts without first refactoring those side effects behind a main function.
+- `main.py` — runtime entry point and Discord command handlers. Runtime initialization is behind `create_application()`
+  and `main()`; keep imports side-effect free for unit tests and utility scripts.
 - `utils/commands.py` — chat-independent fantasy-football calculations and text formatting. Most feature logic belongs here and should be tested with a fake league object.
 - `utils/chat_history.py` — SQLite schema and idempotent, incremental Discord channel-history persistence.
 - `utils/chat_rag.py` — allowlisted conversation chunking, OpenAI embeddings, hybrid SQLite retrieval, DeepSeek answers, and Discord source formatting.
+- `utils/rules.py` — GitHub-backed Markdown rules synchronization, heading-based indexing, hybrid retrieval, and PDF
+  rendering for `/rules`.
 - `scripts/sync_discord_history.py` — read-only Discord history importer. It sends no Discord messages and defaults to the ignored `data/chat_history.db` path.
 - `scripts/ask_chat_history.py` — local, Discord-free question runner over the cached history database.
 - `utils/transaction.py` — formats ESPN recent-activity actions for the waiver table. Trades are not implemented.
@@ -20,8 +25,12 @@ The README and some supporting files still describe the project's older GroupMe,
 - `utils/slack_client.py` — standalone Slack experiment with network activity at import time; it is not part of the active runtime.
 - `utils/tests/` — deterministic pytest coverage for the Discord webhook client and command behavior.
 - `pyproject.toml` and `uv.lock` — Python 3.13 project metadata, bounded direct dependencies, development tools, and exact resolved versions.
-- `Dockerfile` — syncs the frozen uv environment and runs `python main.py` on Python 3.13 Alpine.
-- `app.json`, `manifest.yaml`, `Procfile`, and `fly.toml` — deployment metadata, some of which reflects older hosting or Slack integrations.
+- `Dockerfile` — syncs the frozen uv environment and runs the bot as an unprivileged user on Python 3.13 Alpine.
+- `deploy/compose.production.yaml` — single-service production configuration for the DigitalOcean droplet.
+- `.github/workflows/deploy.yml` — tests, publishes immutable GHCR images, and deploys them to DigitalOcean over SSH.
+- `deploy/README.md` — droplet bootstrap, secrets, GHCR authentication, deployment, and rollback instructions.
+- `app.json`, `manifest.yaml`, `Procfile`, and `fly.toml` — legacy deployment metadata retained during the hosting
+  migration.
 
 ## Setup and common commands
 

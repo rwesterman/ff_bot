@@ -13,3 +13,7 @@ __pycache__/
 .ruff_cache/
 .env
 data/
+/chat_history-migration.db
+/deploy/app.env
+/deploy/.deploy.env
+/deploy/data/

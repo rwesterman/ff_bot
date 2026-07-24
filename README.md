@@ -235,6 +235,12 @@ docker run --rm \
   ff-bot
 ```
 
+### Deploying to DigitalOcean
+
+The production deployment builds immutable container images in GitHub Actions, publishes them to GHCR, and deploys the
+selected image to the DigitalOcean droplet with Docker Compose. Server bootstrap, required GitHub secrets, persistence,
+and rollback instructions are documented in [`deploy/README.md`](deploy/README.md).
+
 ### Running without Docker
 
 ```bash

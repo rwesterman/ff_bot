@@ -11,7 +11,9 @@
 **/*.zip
 fly.toml
 .git
+.github
 .env
+deploy
 **/__pycache__
 **/.pytest_cache
 **/.ruff_cache
