@@ -1,0 +1,27 @@
+name: ff-bot
+
+services:
+  bot:
+    image: ${FF_BOT_IMAGE:?Set FF_BOT_IMAGE in .deploy.env}
+    container_name: ff-bot
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ./app.env
+    environment:
+      CHAT_HISTORY_DB: /data/chat_history.db
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - type: bind
+        source: ./data
+        target: /data
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

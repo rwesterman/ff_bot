@@ -1,23 +1,57 @@
-import unittest
+from types import SimpleNamespace
 
-from ff_espn_api import League, Team
-# from utils.utils import (GroupMeBot, GroupMeException, )
-from utils.bots import get_power_rankings, get_last_place_team, get_close_scores, get_matchups, get_scoreboard, get_scoreboard_short, get_trophies
+from utils.commands import Commands
 
 
-class EspnTestCase(unittest.TestCase):
-    '''Test ESPN League methods class'''
+def team(name, abbreviation, wins=0, losses=0, points_for=0):
+    return SimpleNamespace(
+        team_name=name,
+        team_abbrev=abbreviation,
+        wins=wins,
+        losses=losses,
+        points_for=points_for,
+    )
 
-    def setUp(self):
-        league_id = 950634
-        year = 2018
-        # Secret stuff
-        espn_s2 = "AECcqBAxkb6iztLdTzvhM6dSAdobKKCPuSY8DF3qSTGmjjVUtPZT8NSSv7KywiL569X2Ml8wZb0rxUNrUY%2F1ky%2FSzYlFigLbX%2FQZhA8D7nkkB752d9kMJmWO6B43%2FZFspi1tyvRPUPSciqK1A0hsYMI9HYyUa37MLrQFTbXrEcSwpb1%2BH0uwWdmm2%2BS2GZM04fjCWtC4GjuIgdBx%2FxE8VYOz6STEAPyGSn9RxDonMuDrCGHEljM1a1I2vi4m3eesI9Rmx%2FqH0kq0Sv7ybGL0YxHD"
-        swid = "{BFD1DF0E-0120-4EF1-A54E-128EAE53AA82}"
-        # Set up bot with debug mode
-        self.league = League(league_id, year, espn_s2, swid)
-        # self.test_bot = GroupMeBot("d6b7111ac8a3b7da98aed334ed")
-        # self.test_text = "This is a test."
 
-    def test_get_trophies(self):
-        print(get_trophies(self.league))
+class FakeLeague:
+    current_week = 2
+
+    def __init__(self):
+        self.teams = [
+            team("Alpha", "ALP", wins=1, losses=0, points_for=250),
+            team("Beta", "BET", wins=0, losses=1, points_for=200),
+        ]
+        self.refresh_count = 0
+
+    def refresh(self):
+        self.refresh_count += 1
+
+    def box_scores(self, week=None):
+        return [
+            SimpleNamespace(
+                home_team=self.teams[0],
+                away_team=self.teams[1],
+                home_score=120.25,
+                away_score=115.5,
+                home_lineup=[],
+                away_lineup=[],
+            )
+        ]
+
+
+def test_scoreboard_uses_current_box_scores():
+    result = Commands(FakeLeague()).get_scoreboard_short()
+
+    assert result == "Score Update\nALP 120.25 - 115.50 BET"
+
+
+def test_matchups_include_records():
+    result = Commands(FakeLeague()).get_matchups()
+
+    assert result == "Matchups:\nAlpha(1-0) vs Beta(0-1)"
+
+
+def test_standings_add_top_half_wins():
+    result = Commands(FakeLeague()).get_standings()
+
+    assert result == "Current Standings:\n1: Alpha (2 - 0) (+1)\n2: Beta (0 - 1) (+0)"

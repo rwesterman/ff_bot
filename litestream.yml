@@ -1,0 +1,21 @@
+access-key-id: ${AWS_ACCESS_KEY_ID}
+secret-access-key: ${AWS_SECRET_ACCESS_KEY}
+exec: python main.py
+
+snapshot:
+  interval: 24h
+  retention: 720h
+
+validation:
+  interval: 6h
+
+dbs:
+  - path: ${CHAT_HISTORY_DB}
+    busy-timeout: 5s
+    replica:
+      type: s3
+      bucket: ${BUCKET_NAME}
+      path: ff-bot/chat_history.db
+      endpoint: fly.storage.tigris.dev
+      region: auto
+      sync-interval: 1m

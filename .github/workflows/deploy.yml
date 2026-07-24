@@ -1,0 +1,142 @@
+name: Test, publish, and deploy
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE_NAME: ghcr.io/rwesterman/ff_bot
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          python-version: "3.13"
+          version: "0.11.24"
+
+      - name: Install locked dependencies
+        run: uv sync --frozen
+
+      - name: Run tests
+        run: uv run --frozen pytest -m "not live"
+
+      - name: Check formatting
+        run: uv run --frozen ruff format --check .
+
+      - name: Run lint
+        run: uv run --frozen ruff check .
+
+  publish:
+    name: Publish GHCR image
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Log in to GHCR
+        run: printf '%s\n' "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build image
+        shell: bash
+        run: |
+          set -euo pipefail
+          tags=(--tag "${IMAGE_NAME}:${GITHUB_SHA}")
+          if [[ "${GITHUB_REF}" == "refs/heads/master" ]]; then
+            tags+=(--tag "${IMAGE_NAME}:latest")
+          fi
+          docker build \
+            --pull \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            "${tags[@]}" \
+            .
+
+      - name: Push image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${IMAGE_NAME}:${GITHUB_SHA}"
+          if [[ "${GITHUB_REF}" == "refs/heads/master" ]]; then
+            docker push "${IMAGE_NAME}:latest"
+          fi
+
+  deploy:
+    name: Deploy to DigitalOcean
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    env:
+      DEPLOY_HOST: ${{ vars.DROPLET_HOST || '157.230.80.234' }}
+      DEPLOY_USER: ${{ vars.DROPLET_SSH_USER || 'ffbot' }}
+      DEPLOY_PRIVATE_KEY: ${{ secrets.DROPLET_SSH_PRIVATE_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DROPLET_SSH_KNOWN_HOSTS }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_PRIVATE_KEY}"
+          test -n "${DEPLOY_KNOWN_HOSTS}"
+          install -d -m 700 "${HOME}/.ssh"
+          printf '%s\n' "${DEPLOY_PRIVATE_KEY}" > "${HOME}/.ssh/id_ed25519"
+          printf '%s\n' "${DEPLOY_KNOWN_HOSTS}" > "${HOME}/.ssh/known_hosts"
+          chmod 600 "${HOME}/.ssh/id_ed25519" "${HOME}/.ssh/known_hosts"
+
+      - name: Verify server is initialized
+        run: |
+          ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "test -d /opt/ff-bot && test -f /opt/ff-bot/app.env && docker compose version"
+
+      - name: Upload deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'FF_BOT_IMAGE=%s\n' "${IMAGE_NAME}:${GITHUB_SHA}" > "${RUNNER_TEMP}/ff-bot-deploy.env"
+          scp deploy/compose.production.yaml \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/ff-bot/compose.production.yaml.next"
+          scp "${RUNNER_TEMP}/ff-bot-deploy.env" \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/ff-bot/.deploy.env.next"
+
+      - name: Recreate bot container
+        run: |
+          ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            set -eu
+            cd /opt/ff-bot
+            docker compose --env-file .deploy.env.next -f compose.production.yaml.next config --quiet
+            docker compose --env-file .deploy.env.next -f compose.production.yaml.next pull
+            mv compose.production.yaml.next compose.production.yaml
+            mv .deploy.env.next .deploy.env
+            docker compose --env-file .deploy.env -f compose.production.yaml up -d --remove-orphans
+            sleep 15
+            container_state=$(docker inspect --format "{{.State.Status}} {{.RestartCount}}" ff-bot)
+            test "${container_state}" = "running 0"
+          '

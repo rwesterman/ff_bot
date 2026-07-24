@@ -193,80 +193,121 @@ No, but I am open to pull requests implementing their API for additional cross p
 
 ## Getting Started for development and testing
 
-These instructions will get you a copy of the project up and running
-on your local machine for development and testing purposes.
+The project uses [uv](https://docs.astral.sh/uv/) for Python installation, dependency locking, environments, and commands.
+Python 3.13 is selected by `.python-version`, and `uv.lock` contains the exact reproducible dependency set.
 
 ### Installing for development
-With Docker:
-```bash
-git clone https://github.com/dtcarls/ff_bot
-
-cd ff_bot
-
-docker build -t ff_bot .
-```
-
-Without Docker:
 
 ```bash
 git clone https://github.com/dtcarls/ff_bot
-
 cd ff_bot
-
-python3 setup.py install
+uv sync --frozen
 ```
 
 ### Environment Variables
 
-- BOT_ID: This is your Bot ID from the GroupMe developers page (REQUIRED IF USING GROUPME)
-- SLACK_WEBHOOK_URL: This is your Webhook URL from the Slack App page (REQUIRED IF USING SLACK)
-- DISCORD_WEBHOOK_URL: This is your Webhook URL from the Discord Settings page (REQUIRED IF USING DISCORD)
-- LEAGUE_ID: This is your ESPN league id (REQUIRED)
-- START_DATE: This is when the bot will start paying attention and sending messages to your chat. (2020-09-10 by default)
-- END_DATE: This is when the bot will stop paying attention and stop sending messages to your chat. (2020-12-30 by default)
-- LEAGUE_YEAR: ESPN League year to look at (2020 by default)
-- TIMEZONE: The timezone that the messages will look to send in. (America/New_York by default)
-- INIT_MSG: The message that the bot will say when it is started (“Hi” by default, can be blank for no message)
-- ESPN_S2: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation
-- SWID: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation
-- ESPN_USERNAME: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation **Experimental, currently not working**
-- ESPN_PASSWORD: Used for private leagues. See [Private Leagues Section](#private-leagues) for documentation **Experimental, currently not working**
+- `DISCORD_BOT_TOKEN`: Discord bot token (required).
+- `LEAGUE_ID`: ESPN league ID (required; defaults to `1`).
+- `LEAGUE_YEAR`: ESPN season year (defaults to `2023`).
+- `ESPN_S2`: ESPN session cookie for private leagues.
+- `SWID`: ESPN account ID for private leagues. Braces are added automatically when omitted.
+- `OPENAI_API_KEY`: Used to embed allowlisted chat-history chunks with `text-embedding-3-small`.
+- `DEEPSEEK_API_KEY`: Used by the `/ask` command to answer from retrieved chat excerpts.
+- `DEEPSEEK_THINKING_ENABLED`: Enables DeepSeek thinking mode for `/ask` when set to `true` (defaults to `false`).
+- `DEEPSEEK_MAX_TOKENS`: Maximum combined reasoning and answer tokens from DeepSeek (defaults to `4096`; maximum
+  `65536`). Increase this when thinking mode needs more reasoning space.
+- `RAG_CHANNEL_IDS`: Optional comma-separated Discord channel and thread allowlist.
+- `RULES_GITHUB_REPOSITORY`: GitHub repository containing the Markdown league rules.
+- `RULES_GITHUB_REF`: Branch containing the current rules (defaults to `main`).
+- `RULES_GITHUB_TOKEN`: Fine-grained GitHub token with read-only access to repository contents. Required for a private
+  rules repository and configured as a Fly secret.
 
 ### Running with Docker
 
-Use BOT_ID if using Groupme, DISCORD_WEBHOOK_URL if using Discord, and SLACK_WEBHOOK_URL if using Slack (or multiple to get messages in multiple places)
-
 ```bash
->>> export BOT_ID=[enter your GroupMe Bot ID]
->>> export WEBHOOK_URL=[enter your Webhook URL]
->>> export LEAGUE_ID=[enter ESPN league ID]
->>> export LEAGUE_YEAR=[enter league year]
->>> cd ff_bot
->>> docker run --rm=True \
--e BOT_ID=$BOT_ID \
--e LEAGUE_ID=$LEAGUE_ID \
--e LEAGUE_YEAR=$LEAGUE_YEAR \
-ff_bot
+docker build -t ff-bot .
+docker run --rm \
+  -e DISCORD_BOT_TOKEN \
+  -e LEAGUE_ID \
+  -e LEAGUE_YEAR \
+  -e ESPN_S2 \
+  -e SWID \
+  ff-bot
 ```
+
+### Deploying to DigitalOcean
+
+The production deployment builds immutable container images in GitHub Actions, publishes them to GHCR, and deploys the
+selected image to the DigitalOcean droplet with Docker Compose. Server bootstrap, required GitHub secrets, persistence,
+and rollback instructions are documented in [`deploy/README.md`](deploy/README.md).
 
 ### Running without Docker
 
-Use BOT_ID if using Groupme, DISCORD_WEBHOOK_URL if using Discord, and SLACK_WEBHOOK_URL if using Slack (or multiple to get messages in multiple places)
-
 ```bash
->>> export BOT_ID=[enter your GroupMe Bot ID]
->>> export WEBHOOK_URL=[enter your Webhook URL]
->>> export LEAGUE_ID=[enter ESPN league ID]
->>> export LEAGUE_YEAR=[enter league year]
->>> cd ff_bot
->>> python3 ff_bot/ff_bot.py
+DISCORD_BOT_TOKEN=... LEAGUE_ID=... LEAGUE_YEAR=... uv run --frozen python main.py
 ```
 
-### Running the tests
+### Caching Discord history
 
-Automated tests for this package are included in the `tests` directory. After installation,
-you can run these tests by changing the directory to the `ff_bot` directory and running the following:
+The history sync connects to Discord without sending messages and stores every readable text-channel, thread, and
+voice-channel message in an ignored SQLite database. The initial sync retrieves all history; later runs request only
+messages newer than each channel's cached Discord message ID.
 
-```python3
-python3 setup.py test
+```bash
+# Incremental sync (also performs the initial import when the database is absent)
+uv run --frozen python -m scripts.sync_discord_history
+
+# Explicitly refetch all retained Discord history
+uv run --frozen python -m scripts.sync_discord_history --full
+```
+
+The local default is `data/chat_history.db`. Override it with `CHAT_HISTORY_DB`, such as
+`CHAT_HISTORY_DB=/data/chat_history.db` when `/data` is a persistent Fly volume. The database contains private message
+content and must never be committed or copied into the container image.
+
+### Asking questions about chat history
+
+The bot's `/ask <question>` command incrementally refreshes the allowlisted Discord channels, combines SQLite FTS5
+keyword search with 512-dimension semantic search, and asks DeepSeek to answer only from the retrieved excerpts. Answers
+include links to the source Discord messages. The initial indexing operation sends every allowlisted conversation chunk
+to OpenAI; later refreshes embed only new or changed chunks.
+
+To build or update the index and test a question locally without connecting to or posting in Discord:
+
+```bash
+uv run --frozen python -m scripts.ask_chat_history "What is the tiebreaker for playoff positions?"
+```
+
+The command loads the ignored repository-level `.env`, uses the local `data/chat_history.db`, and prints only the answer
+and source links rather than raw retrieved excerpts.
+
+Production stores the SQLite database on the Fly volume and runs it under Litestream. Create a private Tigris bucket
+with `fly storage create --app ff-bot`; Fly supplies `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and
+`BUCKET_NAME` as secrets. `litestream.yml` replicates database changes every minute and retains daily snapshots for 30
+days. The OpenAI and DeepSeek keys must also be configured as Fly secrets.
+
+### Looking up current league rules
+
+The `/rules <question>` command checks the configured GitHub repository for its latest commit before every lookup. When
+the commit changes, the bot downloads its Markdown files and transactionally updates a heading-based rules index in the
+existing SQLite database. Unchanged sections reuse their embeddings. The response attaches the relevant Markdown
+sections as a timestamped PDF so Discord members do not need access to the source repository. The temporary PDF is
+deleted after Discord completes the upload.
+
+For a private rules repository, create a fine-grained GitHub token limited to that repository with `Contents: read`
+permission, then stage it on Fly:
+
+```bash
+fly secrets set RULES_GITHUB_TOKEN='github_pat_...'
+```
+
+If GitHub cannot be reached or authenticated, `/rules` fails rather than presenting a cached rules revision as current.
+
+### Running checks
+
+```bash
+uv run --frozen pytest -m "not live"
+uv run --frozen pytest -m live  # Uses the ignored repository-level .env file
+uv run --frozen ruff format --check .
+uv run --frozen ruff check .
 ```
