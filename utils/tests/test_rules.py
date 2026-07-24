@@ -5,6 +5,8 @@ from types import SimpleNamespace
 from utils.rules import (
     RepositoryVersion,
     RuleDocument,
+    RuleMatch,
+    RulesSearchResult,
     RulesService,
     build_rule_chunks,
     temporary_pdf_path,
@@ -157,6 +159,37 @@ def test_pdf_contains_verbatim_rules_and_accuracy_timestamp(tmp_path):
     assert b"RULES.md - Current League Rules" in pdf_content
     assert b"Head-to-head record breaks a playoff seeding tie." in pdf_content
     assert b"github.com" not in pdf_content
+
+
+def test_pdf_renders_markdown_table_as_pdf_cells(tmp_path):
+    result = RulesSearchResult(
+        repository="rwesterman/longview_league_rules",
+        ref="main",
+        commit_sha="b" * 40,
+        matches=(
+            RuleMatch(
+                path="RECORDS.md",
+                heading="League champions",
+                content="""## League champions
+
+| Year | Champion | Record |
+| ---: | --- | :---: |
+| 2025 | **Wolves** | 11-3 |
+| 2024 | Bears | 10-4 |
+""",
+                score=1.0,
+            ),
+        ),
+    )
+    output_path = tmp_path / "records.pdf"
+
+    write_rules_pdf(output_path, "Who won the league?", result)
+    pdf_content = output_path.read_bytes()
+
+    assert b"Year" in pdf_content
+    assert b"Wolves" in pdf_content
+    assert b"11-3" in pdf_content
+    assert b"| ---:" not in pdf_content
 
 
 def test_temporary_pdf_is_deleted_after_use():

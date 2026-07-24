@@ -828,6 +828,29 @@ sudo ls -l /opt/ff-bot/app.env
 
 Create it from `deploy/app.env.example` using section 2. The workflow intentionally will not create or overwrite it.
 
+### GitHub Actions cannot read `app.env`
+
+The deployment connects as `ffbot`, so that account must be able to traverse `/opt/ff-bot` and read `app.env`. Inspect
+the path without printing any secret values:
+
+```bash
+sudo namei -l /opt/ff-bot/app.env
+sudo stat -c '%U %G %a %n' /opt/ff-bot /opt/ff-bot/app.env
+```
+
+Repair only the application directory and environment file:
+
+```bash
+sudo chown ffbot:ffbot /opt/ff-bot
+sudo chmod 750 /opt/ff-bot
+sudo chown ffbot:ffbot /opt/ff-bot/app.env
+sudo chmod 600 /opt/ff-bot/app.env
+sudo -u ffbot test -r /opt/ff-bot/app.env &&
+  echo "ffbot can read app.env"
+```
+
+Do not use `chown -R` on `/opt/ff-bot`; `/opt/ff-bot/data` must remain writable by the container's UID/GID `10001`.
+
 ### The image pull is unauthorized
 
 The GHCR login must be performed as `ffbot`, not only as the administrative user:

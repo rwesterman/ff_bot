@@ -18,7 +18,9 @@ from typing import Sequence
 from urllib.parse import quote
 
 import requests
-from fpdf import FPDF
+from fpdf import FPDF, FontFace
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
 from openai import AsyncOpenAI
 
 from utils.chat_history import utc_now
@@ -32,6 +34,7 @@ RETRIEVAL_CANDIDATE_LIMIT = 12
 DEFAULT_RESULT_LIMIT = 3
 MAX_RULES_BYTES = 2_000_000
 GITHUB_API_VERSION = "2022-11-28"
+MARKDOWN_PARSER = MarkdownIt("commonmark", {"html": False}).enable("table")
 
 logger = logging.getLogger(__name__)
 
@@ -675,12 +678,146 @@ def _pdf_safe_text(value: str) -> str:
         }
     )
     text = value.translate(replacements)
-    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
-    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-    text = re.sub(r"(\*\*|__)(.+?)\1", r"\2", text)
-    text = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"\1", text)
-    text = re.sub(r"`([^`]+)`", r"\1", text)
     return text.encode("latin-1", errors="replace").decode("latin-1")
+
+
+def _escape_pdf_markdown(value: str) -> str:
+    text = _pdf_safe_text(value).replace("\\", "\\\\")
+    for marker in ("**", "__", "--", "~~"):
+        text = text.replace(marker, f"\\{marker}")
+    return text
+
+
+def _inline_pdf_text(token: Token) -> str:
+    output: list[str] = []
+    for child in token.children or ():
+        if child.type == "text":
+            output.append(_escape_pdf_markdown(child.content))
+        elif child.type in {"softbreak", "hardbreak"}:
+            output.append("\n")
+        elif child.type == "strong_open":
+            output.append("**")
+        elif child.type == "strong_close":
+            output.append("**")
+        elif child.type == "em_open":
+            output.append("__")
+        elif child.type == "em_close":
+            output.append("__")
+        elif child.type == "s_open":
+            output.append("~~")
+        elif child.type == "s_close":
+            output.append("~~")
+        elif child.type in {"code_inline", "image"}:
+            output.append(_escape_pdf_markdown(child.content))
+    return "".join(output).strip()
+
+
+@dataclass(frozen=True, slots=True)
+class _PDFTableCell:
+    text: str
+    align: str
+    is_heading: bool
+
+
+def _table_cell_alignment(token: Token) -> str:
+    style = token.attrGet("style") or ""
+    if "text-align:right" in style:
+        return "RIGHT"
+    if "text-align:center" in style:
+        return "CENTER"
+    return "LEFT"
+
+
+def _read_markdown_table(tokens: Sequence[Token], start: int) -> tuple[list[list[_PDFTableCell]], int]:
+    rows: list[list[_PDFTableCell]] = []
+    row: list[_PDFTableCell] | None = None
+    index = start + 1
+    while index < len(tokens) and tokens[index].type != "table_close":
+        token = tokens[index]
+        if token.type == "tr_open":
+            row = []
+        elif token.type == "tr_close" and row is not None:
+            rows.append(row)
+            row = None
+        elif token.type in {"th_open", "td_open"} and row is not None:
+            text = ""
+            if index + 1 < len(tokens) and tokens[index + 1].type == "inline":
+                text = _inline_pdf_text(tokens[index + 1])
+            row.append(
+                _PDFTableCell(
+                    text=text,
+                    align=_table_cell_alignment(token),
+                    is_heading=token.type == "th_open",
+                )
+            )
+        index += 1
+    return rows, min(index + 1, len(tokens))
+
+
+def _table_column_widths(rows: Sequence[Sequence[_PDFTableCell]]) -> tuple[int, ...] | None:
+    if not rows:
+        return None
+    column_count = max(len(row) for row in rows)
+    if column_count == 0:
+        return None
+    widths = []
+    for column in range(column_count):
+        longest = max(
+            (
+                max((len(line) for line in row[column].text.splitlines()), default=0)
+                for row in rows
+                if column < len(row)
+            ),
+            default=0,
+        )
+        widths.append(max(6, min(longest, 36)))
+    return tuple(widths)
+
+
+def _render_table(pdf: FPDF, rows: Sequence[Sequence[_PDFTableCell]]) -> None:
+    if not rows:
+        return
+    pdf.set_font("helvetica", size=8.5)
+    pdf.set_text_color(25, 25, 25)
+    heading_rows = 1 if rows[0] and all(cell.is_heading for cell in rows[0]) else 0
+    with pdf.table(
+        align="LEFT",
+        borders_layout="HORIZONTAL_LINES",
+        cell_fill_color=(245, 247, 250),
+        cell_fill_mode="EVEN_ROWS",
+        col_widths=_table_column_widths(rows),
+        first_row_as_headings=bool(heading_rows),
+        headings_style=FontFace(emphasis="B", color=(255, 255, 255), fill_color=(32, 54, 78)),
+        line_height=5,
+        markdown=True,
+        padding=(1.5, 2),
+        repeat_headings=heading_rows,
+        text_align="LEFT",
+        width=pdf.epw,
+    ) as table:
+        for cells in rows:
+            row = table.row()
+            for cell in cells:
+                row.cell(cell.text, align=cell.align)
+    pdf.ln(2)
+
+
+def _render_code_block(pdf: FPDF, content: str) -> None:
+    pdf.set_font("courier", size=8)
+    pdf.set_text_color(35, 35, 35)
+    pdf.set_fill_color(245, 245, 245)
+    pdf.set_draw_color(220, 220, 220)
+    pdf.multi_cell(
+        0,
+        4,
+        _pdf_safe_text(content.rstrip()),
+        border=1,
+        fill=True,
+        padding=2,
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.ln(2)
 
 
 class _RulesPDF(FPDF):
@@ -710,35 +847,88 @@ class _RulesPDF(FPDF):
 
 
 def _render_markdown(pdf: FPDF, markdown: str) -> None:
-    heading_pattern = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
-    for original_line in markdown.splitlines():
-        line = _pdf_safe_text(original_line.rstrip())
-        if not line:
-            pdf.ln(2)
+    tokens = MARKDOWN_PARSER.parse(markdown)
+    list_stack: list[dict[str, int | str]] = []
+    item_stack: list[dict[str, bool | str]] = []
+    blockquote_depth = 0
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token.type == "table_open":
+            rows, index = _read_markdown_table(tokens, index)
+            _render_table(pdf, rows)
             continue
-        heading = heading_pattern.match(line)
-        if heading:
-            level = len(heading.group(1))
-            size = max(11, 16 - level)
-            pdf.set_font("helvetica", "B", size)
+        if token.type in {"fence", "code_block"}:
+            _render_code_block(pdf, token.content)
+        elif token.type == "hr":
+            pdf.set_draw_color(205, 205, 205)
+            pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+            pdf.ln(4)
+        elif token.type == "heading_open":
+            level = int(token.tag[1:])
+            inline = tokens[index + 1]
+            pdf.set_font("helvetica", "B", max(11, 16 - level))
             pdf.set_text_color(32, 54, 78)
             pdf.multi_cell(
                 0,
                 6,
-                heading.group(2).strip().rstrip("#").strip(),
+                _inline_pdf_text(inline),
+                markdown=True,
                 new_x="LMARGIN",
                 new_y="NEXT",
             )
             pdf.ln(1)
-            continue
-        if line.startswith("|"):
-            pdf.set_font("courier", size=8)
-            pdf.set_text_color(25, 25, 25)
-            pdf.multi_cell(0, 4, line, new_x="LMARGIN", new_y="NEXT")
-            continue
-        pdf.set_font("helvetica", size=10)
-        pdf.set_text_color(25, 25, 25)
-        pdf.multi_cell(0, 5, line, new_x="LMARGIN", new_y="NEXT")
+            index += 2
+        elif token.type == "bullet_list_open":
+            list_stack.append({"kind": "bullet", "next": 0})
+        elif token.type == "ordered_list_open":
+            start = int(token.attrGet("start") or 1)
+            list_stack.append({"kind": "ordered", "next": start})
+        elif token.type in {"bullet_list_close", "ordered_list_close"}:
+            list_stack.pop()
+            pdf.ln(1)
+        elif token.type == "list_item_open":
+            current_list = list_stack[-1]
+            if current_list["kind"] == "ordered":
+                prefix = f"{current_list['next']}. "
+                current_list["next"] = int(current_list["next"]) + 1
+            else:
+                prefix = "- "
+            item_stack.append({"prefix": prefix, "used": False})
+        elif token.type == "list_item_close":
+            item_stack.pop()
+        elif token.type == "blockquote_open":
+            blockquote_depth += 1
+        elif token.type == "blockquote_close":
+            blockquote_depth -= 1
+            pdf.ln(1)
+        elif token.type == "inline" and token.level > 0:
+            text = _inline_pdf_text(token)
+            if text:
+                indent = 5 * len(list_stack) + 4 * blockquote_depth
+                prefix = ""
+                if item_stack and not item_stack[-1]["used"]:
+                    prefix = str(item_stack[-1]["prefix"])
+                    item_stack[-1]["used"] = True
+                pdf.set_font("helvetica", size=10)
+                pdf.set_text_color(25, 25, 25)
+                pdf.set_x(pdf.l_margin + indent)
+                if blockquote_depth:
+                    pdf.set_fill_color(245, 247, 250)
+                    pdf.set_draw_color(120, 135, 150)
+                pdf.multi_cell(
+                    pdf.epw - indent,
+                    5,
+                    prefix + text,
+                    border="L" if blockquote_depth else 0,
+                    fill=bool(blockquote_depth),
+                    markdown=True,
+                    padding=(1, 2) if blockquote_depth else 0,
+                    new_x="LMARGIN",
+                    new_y="NEXT",
+                )
+                pdf.ln(1)
+        index += 1
 
 
 def write_rules_pdf(

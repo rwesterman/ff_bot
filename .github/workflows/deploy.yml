@@ -114,7 +114,7 @@ jobs:
       - name: Verify server is initialized
         run: |
           ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "test -d /opt/ff-bot && test -f /opt/ff-bot/app.env && docker compose version"
+            "test -d /opt/ff-bot && test -w /opt/ff-bot && test -r /opt/ff-bot/app.env && docker compose version"
 
       - name: Upload deployment configuration
         shell: bash
