@@ -209,7 +209,7 @@ Important settings are:
 - `DISCORD_BOT_TOKEN`, `LEAGUE_ID`, and `LEAGUE_YEAR` — required to start the bot.
 - `ESPN_S2` and `SWID` — required only for a private ESPN league; remove both for a public league.
 - `OPENAI_API_KEY` — required for `/ask` embeddings and `/rules`.
-- `DEEPSEEK_API_KEY` — required for `/ask` answers.
+- `DEEPSEEK_API_KEY` — required for `/ask` and `/rules` answers.
 - `DEEPSEEK_THINKING_ENABLED` and `DEEPSEEK_MAX_TOKENS` — populate with valid values or remove them to use code
   defaults.
 - `OPENAI_EMBEDDING_MODEL`, `OPENAI_EMBEDDING_DIMENSIONS`, and `RAG_SYNC_INTERVAL_SECONDS` — populate them or remove

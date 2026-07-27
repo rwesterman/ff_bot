@@ -167,7 +167,7 @@ def register_rag_commands(bot, rag_service):
 
 
 def register_rules_command(bot, rules_service):
-    @bot.command(name="rules", brief="Find the relevant portion of the current league rules.")
+    @bot.command(name="rules", brief="Answer a question using the current league rules.")
     @commands.cooldown(rate=1, per=15, type=commands.BucketType.user)
     async def rules(ctx, *, question: str):
         if ctx.guild is None:
@@ -175,20 +175,27 @@ def register_rules_command(bot, rules_service):
             return
         try:
             async with ctx.typing():
-                result = await rules_service.search(question)
+                answer = await rules_service.answer(question)
+                result = answer.sources
                 if not result.matches:
                     await ctx.send("I could not find a relevant section in the current league rules.")
                     return
                 filename = f"league-rules-{result.commit_sha[:7]}.pdf"
                 with temporary_pdf_path() as attachment_path:
                     await asyncio.to_thread(write_rules_pdf, attachment_path, question, result)
+                    response = (
+                        f"{answer.text}\n\n_Source: attached excerpts from rules revision `{result.commit_sha[:12]}`._"
+                    )
+                    parts = split_discord_message(response)
                     await ctx.send(
-                        f"Attached the most relevant sections from rules revision `{result.commit_sha[:12]}`.",
+                        parts[0],
                         file=discord.File(attachment_path, filename=filename),
                     )
+                    for part in parts[1:]:
+                        await ctx.send(part)
         except Exception:
             logger.exception("League rules lookup failed")
-            await ctx.send("I could not verify and retrieve the latest league rules. Please try again later.")
+            await ctx.send("I could not answer from the latest league rules. Please try again later.")
 
     @rules.error
     async def rules_error(ctx, error):

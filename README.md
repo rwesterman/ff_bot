@@ -212,8 +212,9 @@ uv sync --frozen
 - `ESPN_S2`: ESPN session cookie for private leagues.
 - `SWID`: ESPN account ID for private leagues. Braces are added automatically when omitted.
 - `OPENAI_API_KEY`: Used to embed allowlisted chat-history chunks with `text-embedding-3-small`.
-- `DEEPSEEK_API_KEY`: Used by the `/ask` command to answer from retrieved chat excerpts.
-- `DEEPSEEK_THINKING_ENABLED`: Enables DeepSeek thinking mode for `/ask` when set to `true` (defaults to `false`).
+- `DEEPSEEK_API_KEY`: Used by `/ask` and `/rules` to answer from retrieved source excerpts.
+- `DEEPSEEK_THINKING_ENABLED`: Enables DeepSeek thinking mode for `/ask` and `/rules` when set to `true` (defaults to
+  `false`).
 - `DEEPSEEK_MAX_TOKENS`: Maximum combined reasoning and answer tokens from DeepSeek (defaults to `4096`; maximum
   `65536`). Increase this when thinking mode needs more reasoning space.
 - `RAG_CHANNEL_IDS`: Optional comma-separated Discord channel and thread allowlist.
@@ -290,9 +291,9 @@ days. The OpenAI and DeepSeek keys must also be configured as Fly secrets.
 
 The `/rules <question>` command checks the configured GitHub repository for its latest commit before every lookup. When
 the commit changes, the bot downloads its Markdown files and transactionally updates a heading-based rules index in the
-existing SQLite database. Unchanged sections reuse their embeddings. The response attaches the relevant Markdown
-sections as a timestamped PDF so Discord members do not need access to the source repository. The temporary PDF is
-deleted after Discord completes the upload.
+existing SQLite database. Unchanged sections reuse their embeddings. DeepSeek answers succinctly from the retrieved
+sections, and the response attaches those verbatim sections as a timestamped PDF so Discord members can verify the
+answer without access to the source repository. The temporary PDF is deleted after Discord completes the upload.
 
 For a private rules repository, create a fine-grained GitHub token limited to that repository with `Contents: read`
 permission, then stage it on Fly:

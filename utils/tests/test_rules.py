@@ -2,7 +2,9 @@ import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import utils.rules as rules_module
 from utils.rules import (
+    RULES_ANSWER_SYSTEM_PROMPT,
     RepositoryVersion,
     RuleDocument,
     RuleMatch,
@@ -54,6 +56,27 @@ class FakeEmbeddingClient:
         self.embeddings = FakeEmbeddings()
 
 
+class FakeCompletions:
+    def __init__(self, response=None):
+        self.calls = []
+        self.response = response
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.response is not None:
+            return self.response
+        message = SimpleNamespace(
+            content="Head-to-head record breaks a playoff seeding tie.\n\n"
+            "> Head-to-head record breaks a playoff seeding tie."
+        )
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")])
+
+
+class FakeAnswerClient:
+    def __init__(self, response=None):
+        self.chat = SimpleNamespace(completions=FakeCompletions(response=response))
+
+
 def rule_documents(playoff_rule="Head-to-head record breaks a playoff seeding tie."):
     return (
         RuleDocument(
@@ -72,14 +95,16 @@ Waivers use a $100 FAAB budget.
     )
 
 
-def make_service(path, github_client, embedding_client):
+def make_service(path, github_client, embedding_client, answer_client=None, **service_options):
     return RulesService(
         database_path=path,
         repository="rwesterman/longview_league_rules",
         ref="main",
         github_client=github_client,
         embedding_client=embedding_client,
+        answer_client=answer_client or FakeAnswerClient(),
         embedding_dimensions=4,
+        **service_options,
     )
 
 
@@ -138,6 +163,75 @@ def test_rules_refresh_reuses_unchanged_section_embeddings(tmp_path):
     assert second.embeddings_created == 1
     assert second.embeddings_reused == 1
     assert second.commit_sha == "b" * 40
+
+
+def test_rules_answer_uses_retrieved_excerpts_and_existing_deepseek_settings(tmp_path):
+    github_client = FakeGitHubClient(rule_documents())
+    answer_client = FakeAnswerClient()
+    service = make_service(
+        tmp_path / "history.db",
+        github_client,
+        FakeEmbeddingClient(),
+        answer_client=answer_client,
+    )
+
+    answer = asyncio.run(service.answer("What is the playoff tiebreaker?"))
+
+    assert answer.text.startswith("Head-to-head")
+    assert answer.sources.matches[0].path == "RULES.md"
+    call = answer_client.chat.completions.calls[0]
+    assert call["messages"][0]["content"] == RULES_ANSWER_SYSTEM_PROMPT
+    assert "Keep the answer succinct" in RULES_ANSWER_SYSTEM_PROMPT
+    assert "preferably include a brief exact quote" in RULES_ANSWER_SYSTEM_PROMPT
+    assert "Question: What is the playoff tiebreaker?" in call["messages"][1]["content"]
+    assert "[Reference 1] RULES.md" in call["messages"][1]["content"]
+    assert "Head-to-head record breaks a playoff seeding tie." in call["messages"][1]["content"]
+    assert call["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert call["max_tokens"] == 4_096
+    assert call["temperature"] == 0.1
+
+
+def test_rules_service_reads_deepseek_settings_from_environment(tmp_path, monkeypatch):
+    clients = []
+
+    def fake_client(**kwargs):
+        client = SimpleNamespace(configuration=kwargs)
+        clients.append(client)
+        return client
+
+    monkeypatch.setenv("RULES_GITHUB_REPOSITORY", "rwesterman/longview_league_rules")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+    monkeypatch.setenv("DEEPSEEK_THINKING_ENABLED", "true")
+    monkeypatch.setenv("DEEPSEEK_MAX_TOKENS", "8192")
+    monkeypatch.setattr(rules_module, "AsyncOpenAI", fake_client)
+
+    service = RulesService.from_environment(tmp_path / "history.db")
+
+    assert service.answer_thinking_enabled is True
+    assert service.answer_max_tokens == 8_192
+    assert clients[0].configuration == {"api_key": "test-openai-key"}
+    assert clients[1].configuration["api_key"] == "test-deepseek-key"
+    assert clients[1].configuration["base_url"] == "https://api.deepseek.com"
+
+
+def test_rules_answer_honors_thinking_and_token_settings(tmp_path):
+    answer_client = FakeAnswerClient()
+    service = make_service(
+        tmp_path / "history.db",
+        FakeGitHubClient(rule_documents()),
+        FakeEmbeddingClient(),
+        answer_client=answer_client,
+        answer_thinking_enabled=True,
+        answer_max_tokens=8_192,
+    )
+
+    asyncio.run(service.answer("What is the playoff tiebreaker?"))
+
+    call = answer_client.chat.completions.calls[0]
+    assert call["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert call["max_tokens"] == 8_192
+    assert "temperature" not in call
 
 
 def test_pdf_contains_verbatim_rules_and_accuracy_timestamp(tmp_path):
