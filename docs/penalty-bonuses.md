@@ -5,10 +5,14 @@ Messages there. Polling starts when Discord is ready and repeats every ten minut
 An unset/blank channel ID disables polling. Existing recorded bonuses still apply to scores.
 
 Use `/penalties 1` (or another week from 1 to 18) to inspect the current league/season's recorded awards. Like the other
-bot commands, this is a `/`-prefixed chat command. It reads SQLite only and does not trigger a poll or award points.
-The table lists fantasy team, player, penalty, bonus, and announcement status (Sent/Pending), with eight rows per message
+bot commands, this is a `/`-prefixed chat command. It forces a fresh ESPN penalty and fantasy-lineup lookup for that week,
+records new eligible bonuses silently, then displays the updated ledger. Weeks beyond the current fantasy week are rejected.
+New awards discovered this way are marked Silent and will not be announced by later scheduled polls, even after a restart.
+Existing pending announcements from scheduled polls remain pending. The refresh works even without `PENALTY_CHANNEL_ID`.
+The table lists fantasy team, player, penalty, bonus, and announcement status (Sent/Pending/Silent), with eight rows per message
 and a total across all pages. Long names are shortened for readability; full names and descriptions remain in SQLite.
-Both sent and pending awards are included. An empty result means nothing has been logged, not that ESPN has no flags.
+All recorded awards are included. An empty result means no eligible bonuses are logged after the refresh.
+Feed or database failures produce an error rather than presenting an old table as freshly updated.
 
 The public ESPN scoreboard and detailed play-by-play JSON feeds supply regular-season games and penalized athlete IDs.
 These are undocumented public endpoints and may change. Failures are logged and retried, not treated as a clean week.

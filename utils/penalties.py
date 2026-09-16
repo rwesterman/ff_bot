@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 import re
 import sqlite3
+from threading import RLock
 
 import requests
 
@@ -136,19 +137,23 @@ class PenaltyStore:
                 )
             """)
 
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(penalty_bonuses)")}
+            if "notification_suppressed" not in columns:
+                db.execute("ALTER TABLE penalty_bonuses ADD COLUMN notification_suppressed INTEGER NOT NULL DEFAULT 0")
+
     def connect(self):
         db = sqlite3.connect(self.path, timeout=30)
         db.row_factory = sqlite3.Row
         return db
 
-    def award(self, penalty, team, player):
+    def award(self, penalty, team, player, *, notify=True):
         with closing(self.connect()) as db, db:
             cursor = db.execute(
                 """
                 INSERT INTO penalty_bonuses
                     (league_id, season, game_id, play_id, occurrence, team_id, team_name,
-                     player_id, player_name, penalty_name, description, week)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     player_id, player_name, penalty_name, description, week, notification_suppressed)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(league_id, season, game_id, play_id, player_id, occurrence) DO NOTHING
             """,
                 (
@@ -164,6 +169,7 @@ class PenaltyStore:
                     penalty.name,
                     penalty.description,
                     penalty.week,
+                    int(not notify),
                 ),
             )
             return cursor.rowcount == 1
@@ -195,7 +201,8 @@ class PenaltyStore:
             return db.execute(
                 """
                 SELECT * FROM penalty_bonuses
-                WHERE league_id = ? AND season = ? AND notified_at IS NULL ORDER BY id
+                WHERE league_id = ? AND season = ? AND notified_at IS NULL
+                    AND notification_suppressed = 0 ORDER BY id
             """,
                 (self.league_id, self.season),
             ).fetchall()
@@ -211,7 +218,7 @@ class PenaltyStore:
             )
 
 
-def record_starter_penalties(store, penalties, box_scores):
+def record_starter_penalties(store, penalties, box_scores, *, notify=True):
     starters = {}
     for box in box_scores:
         for side in ("home", "away"):
@@ -225,7 +232,7 @@ def record_starter_penalties(store, penalties, box_scores):
     for penalty in penalties:
         owners = starters.get(penalty.player_id, [])
         if len(owners) == 1:
-            count += store.award(penalty, *owners[0])
+            count += store.award(penalty, *owners[0], notify=notify)
         elif owners:
             logger.warning("Player %s has multiple active fantasy owners; skipping", penalty.player_id)
     return count
@@ -253,18 +260,33 @@ class PenaltyMonitor:
         self.store = store
         self.source = source or EspnPenaltySource()
         self.caught_up = False
+        self.poll_lock = RLock()
+
+    def _record_week(self, week, *, notify):
+        penalties = self.source.fetch_week(self.store.season, week)
+        if penalties:
+            with self.commander.league_lock:
+                boxes = self.commander.league.box_scores(week=week)
+                record_starter_penalties(self.store, penalties, boxes, notify=notify)
+
+    def poll_week(self, week, *, notify=False):
+        if not 1 <= week <= 18:
+            raise ValueError("Week must be between 1 and 18.")
+        with self.poll_lock:
+            with self.commander.league_lock:
+                self.commander.league.refresh()
+                if week > self.commander.league.current_week:
+                    raise ValueError("Cannot refresh penalties for a future week.")
+            self._record_week(week, notify=notify)
 
     def poll(self):
-        # Share the commander's lock because espn-api refresh mutates its League.
-        with self.commander.league_lock:
-            league = self.commander.league
-            league.refresh()
-            current = min(league.current_week, 18)
-        weeks = range(1 if not self.caught_up else max(1, current - 1), current + 1)
-        for week in weeks:
-            penalties = self.source.fetch_week(self.store.season, week)
-            if penalties:
-                with self.commander.league_lock:
-                    boxes = league.box_scores(week=week)
-                    record_starter_penalties(self.store, penalties, boxes)
-        self.caught_up = True
+        with self.poll_lock:
+            # Share the commander's lock because espn-api refresh mutates its League.
+            with self.commander.league_lock:
+                league = self.commander.league
+                league.refresh()
+                current = min(league.current_week, 18)
+            weeks = range(1 if not self.caught_up else max(1, current - 1), current + 1)
+            for week in weeks:
+                self._record_week(week, notify=True)
+            self.caught_up = True

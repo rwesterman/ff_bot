@@ -5,6 +5,7 @@ from copy import copy
 import logging
 from threading import RLock
 from tabulate import tabulate
+from utils.penalties import PenaltyMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ class Commands:
         self.league = league
         self.penalty_store = penalty_store
         self.league_lock = RLock()
+        self.penalty_monitor = PenaltyMonitor(self, penalty_store) if penalty_store else None
 
         self.TeamStats = namedtuple("TeamStats", ["wins", "losses", "team_name", "points_for"])
         # A mapping from groupme user ID to team number
@@ -39,6 +41,12 @@ class Commands:
 
         return text
 
+    def refresh_penalties(self, week):
+        if self.penalty_monitor is None:
+            return ["The penalty bonus database is not configured."]
+        self.penalty_monitor.poll_week(week, notify=False)
+        return self.get_penalties(week)
+
     def get_penalties(self, week):
         """Return bounded Discord table pages from the ledger without fetching ESPN."""
         if not 1 <= week <= 18:
@@ -63,7 +71,7 @@ class Commands:
                     cell(record["player_name"], 22),
                     cell(record["penalty_name"], 23),
                     f"+{record['points']}",
-                    "Sent" if record["notified_at"] else "Pending",
+                    "Silent" if record["notification_suppressed"] else "Sent" if record["notified_at"] else "Pending",
                 ]
                 for record in records[offset : offset + 8]
             ]

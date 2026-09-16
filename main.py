@@ -13,7 +13,7 @@ from urllib3.exceptions import HTTPError
 
 from utils.chat_rag import HistoryRagService, format_discord_answer, split_discord_message
 from utils.commands import Commands
-from utils.penalties import PenaltyMonitor, PenaltyStore, deliver_pending
+from utils.penalties import PenaltyStore, deliver_pending
 from utils.contest import ContestService
 from utils.rules import RulesService, temporary_pdf_path, write_rules_pdf
 from utils.transaction import Transaction
@@ -46,18 +46,19 @@ def initialize_bot():
 
 
 def register_league_commands(bot, commander):
-    @bot.command(name="penalties", brief="List recorded penalty bonuses for a week.")
+    @bot.command(name="penalties", brief="Refresh a week's penalty bonuses silently and show the results.")
     async def penalties(ctx, week: int):
         if not 1 <= week <= 18:
             await ctx.send("Week must be between 1 and 18. Usage: `/penalties <week>`")
             return
         try:
-            pages = await asyncio.to_thread(commander.get_penalties, week)
+            async with ctx.typing():
+                pages = await asyncio.to_thread(commander.refresh_penalties, week)
             for page in pages:
                 await ctx.send(page, allowed_mentions=discord.AllowedMentions.none())
         except Exception:
-            logger.exception("Could not retrieve logged penalty bonuses")
-            await ctx.send("I could not read the penalty bonus database. Please try again later.")
+            logger.exception("Could not refresh penalty bonuses for week %s", week)
+            await ctx.send("I could not refresh that week's penalties. Check the week number and try again later.")
 
     @penalties.error
     async def penalties_error(ctx, error):
@@ -315,7 +316,7 @@ def configure_history_refresh(bot, rag_service):
 
 
 def configure_penalty_polling(bot, commander, store, channel_id):
-    monitor = PenaltyMonitor(commander, store)
+    monitor = commander.penalty_monitor
 
     @tasks.loop(minutes=10)
     async def poll_penalties():

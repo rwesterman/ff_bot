@@ -1,4 +1,5 @@
 from dataclasses import replace
+from contextlib import closing
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -320,6 +321,66 @@ def test_reclassified_flag_is_not_a_second_bonus(store, penalty):
     store.award(penalty, team(2), player())
     assert not store.award(replace(penalty, name="Unsportsmanlike Conduct"), team(2), player())
     assert store.totals(1) == {2: 10}
+
+
+def test_manual_refresh_fetches_week_and_keeps_new_awards_silent_after_restart(store, penalty, league):
+    commander = Commands(league, store)
+    source = Mock()
+    source.fetch_week.return_value = [penalty]
+    commander.penalty_monitor.source = source
+    pages = commander.refresh_penalties(1)
+    source.fetch_week.assert_called_once_with(2026, 1)
+    league.box_scores.assert_called_once_with(week=1)
+    assert "Silent" in pages[0]
+    assert store.totals(1) == {2: 10}
+    assert store.pending() == []
+    assert not commander.penalty_monitor.caught_up
+
+    restarted = PenaltyStore(store.path, 123, 2026)
+    monitor = PenaltyMonitor(Commands(league, restarted), restarted, source)
+    source.fetch_week.side_effect = lambda season, week: [penalty] if week == 1 else []
+    monitor.poll()
+    assert restarted.totals(1) == {2: 10}
+    send = AsyncMock()
+    asyncio.run(deliver_pending(restarted, 2, send))
+    send.assert_not_awaited()
+
+
+def test_manual_refresh_preserves_existing_pending_announcements(store, penalty, league):
+    store.award(penalty, team(2), player())
+    commander = Commands(league, store)
+    commander.penalty_monitor.source = Mock()
+    commander.penalty_monitor.source.fetch_week.return_value = [penalty, replace(penalty, play_id="new")]
+    pages = commander.refresh_penalties(1)
+    assert "Pending" in pages[0] and "Silent" in pages[0]
+    assert [row["play_id"] for row in store.pending()] == ["play1"]
+    assert store.totals(1) == {2: 20}
+
+
+def test_manual_refresh_failure_propagates_and_future_week_is_rejected(store, league):
+    commander = Commands(league, store)
+    commander.penalty_monitor.source = Mock()
+    commander.penalty_monitor.source.fetch_week.side_effect = requests.Timeout()
+    with pytest.raises(requests.Timeout):
+        commander.refresh_penalties(1)
+    assert store.for_week(1) == []
+    commander.penalty_monitor.source.reset_mock()
+    with pytest.raises(ValueError, match="future week"):
+        commander.refresh_penalties(3)
+    commander.penalty_monitor.source.fetch_week.assert_not_called()
+
+
+def test_existing_ledger_upgrade_preserves_notification_state(store, penalty):
+    store.award(penalty, team(2), player())
+    store.mark_notified(store.pending()[0]["id"], 99)
+    store.award(replace(penalty, play_id="pending"), team(2), player())
+    with closing(store.connect()) as db, db:
+        db.execute("ALTER TABLE penalty_bonuses DROP COLUMN notification_suppressed")
+    upgraded = PenaltyStore(store.path, 123, 2026)
+    assert upgraded.totals(1) == {2: 20}
+    assert [row["play_id"] for row in upgraded.pending()] == ["pending"]
+    assert upgraded.for_week(1)[0]["discord_message_id"] == "99"
+    PenaltyStore(store.path, 123, 2026)  # Reopening the upgraded schema is safe.
 
 
 def test_penalty_table_reads_only_selected_week_league_and_season(store, penalty):
