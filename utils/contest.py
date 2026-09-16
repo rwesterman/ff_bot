@@ -794,9 +794,7 @@ def format_week(week: int, payouts: list[Payout], contest: Contest | None, statu
 
     for payout in payouts:
         category = "High score" if payout.category == HIGH_SCORE else contest.name if contest else "Contest"
-        lines.append(
-            f"- **{category}:** {payout.team_name} — {format_money(payout.amount_cents)} ({payout.detail})"
-        )
+        lines.append(f"- **{category}:** {payout.team_name} — {format_money(payout.amount_cents)} ({payout.detail})")
 
     if contest and not any(payout.category == SIDE_CONTEST for payout in payouts):
         lines.append(f"- **{contest.name}:** No result is available yet.")
