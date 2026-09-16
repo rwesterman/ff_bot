@@ -222,8 +222,9 @@ uv sync --frozen
 - `RULES_GITHUB_REF`: Branch containing the current rules (defaults to `main`).
 - `RULES_GITHUB_TOKEN`: Fine-grained GitHub token with read-only access to repository contents. Required for a private
   rules repository and configured as a Fly secret.
-- `CONTEST_ADMIN_IDS`: Comma-separated Discord user IDs allowed to settle weeks and log penalties with
-  `/weeklycontest`. When unset, any user can write to the payout ledger.
+- `CONTEST_ADMIN_IDS`: Comma-separated Discord user IDs allowed to log penalties with `/weeklycontests`. When unset,
+  any user may log penalties.
+- `CONTEST_TIMEZONE`: Timezone used to choose the displayed contest week (defaults to `America/Chicago`).
 
 ### Running with Docker
 
@@ -312,27 +313,25 @@ Every week pays two $20 pots: one to the highest-scoring lineup, and one to that
 contests live in `utils/contest_schedule.py`.
 
 ```
-/weeklycontest              # this week's payouts and the season totals
-/weeklycontest 5            # a specific week
-/weeklycontest settle 5     # score week 5 and record it (treasurer only)
-/weeklycontest totals       # season totals alone
-/weeklycontest export       # the whole ledger as a CSV attachment
+/weeklycontests              # relevant week's results and the season totals
+/weeklycontests totals       # season totals alone
+/weeklycontests export       # the whole final-results ledger as a CSV attachment
 ```
 
 Weekly contest and penalty bonus records use `LEAGUE_DB` (default `data/league.db`; production `/data/league.db`).
 Chat/RAG and rules indexes continue to use `CHAT_HISTORY_DB`. No old records are migrated automatically. To rebuild
-completed Week 1 in a fresh league database, run `/weeklycontest settle 1` in Discord.
+completed weeks in a fresh league database, run `/weeklycontests` in Discord.
 
-Settling scores a week from ESPN and writes the result to SQLite. Later reads come from those saved rows, so a stat
-correction days after kickoff cannot change money that was already awarded. Re-running `settle` on the same week
-replaces its payouts instead of duplicating them. When several teams tie, the pot splits evenly and the odd cents are
-distributed, so the recorded payouts always add back to exactly $20.
+The command refreshes ESPN automatically. Thursday through Monday it shows the current week's live leaders as pending.
+Tuesday and Wednesday it shows the prior week's final results and the upcoming challenge. Completed weeks are
+automatically written to SQLite, so later reads do not move money after a payout was finalized. When several teams tie,
+the pot splits evenly and the odd cents are distributed, so the recorded payouts always add back to exactly $20.
 
 Two contests need input the ESPN API does not carry. Week 13 counts taunting and unsportsmanlike penalties, logged as
 they happen:
 
 ```
-/weeklycontest penalty 13 "Team Name" 1 Player Name
+/weeklycontests penalty 13 "Team Name" 1 Player Name
 ```
 
 Week 8 pays the best keeper and reads ESPN's keeper flags directly. A team that designated no keeper is not eligible

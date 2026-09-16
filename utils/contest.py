@@ -18,8 +18,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-
-from tabulate import tabulate
+from zoneinfo import ZoneInfo
 
 from utils.contest_schedule import (
     AFC_TEAMS,
@@ -644,7 +643,7 @@ def build_payouts(contest: Contest | None, high_scorers: list[Winner], side_winn
     return payouts
 
 
-def settle_week(ledger: ContestLedger, league, week: int, settled_by: int | None = None) -> list[Payout]:
+def calculate_week(ledger: ContestLedger, league, week: int) -> list[Payout]:
     contest = contest_for_week(week)
     required = set(contest.weeks_required()) if contest else set()
     required.add(week)
@@ -667,7 +666,11 @@ def settle_week(ledger: ContestLedger, league, week: int, settled_by: int | None
         else:
             side_winners = resolver(context)
 
-    payouts = build_payouts(contest, high_scorers, side_winners, week)
+    return build_payouts(contest, high_scorers, side_winners, week)
+
+
+def settle_week(ledger: ContestLedger, league, week: int, settled_by: int | None = None) -> list[Payout]:
+    payouts = calculate_week(ledger, league, week)
     ledger.save_payouts(week, payouts, settled_by=settled_by)
     return payouts
 
@@ -688,18 +691,27 @@ def resolve_team(league, query: str):
 class ContestService:
     """Opens a short-lived ledger per operation, so calls stay safe from worker threads."""
 
-    def __init__(self, league, database_path: str | Path, league_year: int, admin_ids=frozenset()):
+    def __init__(
+        self,
+        league,
+        database_path: str | Path,
+        league_year: int,
+        admin_ids=frozenset(),
+        timezone: ZoneInfo | None = None,
+    ):
         self.league = league
         self.database_path = Path(database_path)
         self.league_year = league_year
         self.admin_ids = frozenset(admin_ids)
+        self.timezone = timezone or ZoneInfo("America/Chicago")
 
     @classmethod
     def from_environment(cls, league, database_path: str | Path):
         raw_admins = os.getenv("CONTEST_ADMIN_IDS", "")
         admin_ids = {int(part) for part in raw_admins.replace(",", " ").split() if part.strip().isdigit()}
         league_year = int(os.getenv("LEAGUE_YEAR", str(datetime.now(UTC).year)))
-        return cls(league, database_path, league_year, admin_ids)
+        timezone = ZoneInfo(os.getenv("CONTEST_TIMEZONE", "America/Chicago"))
+        return cls(league, database_path, league_year, admin_ids, timezone)
 
     def is_admin(self, user_id: int) -> bool:
         return not self.admin_ids or user_id in self.admin_ids
@@ -707,21 +719,41 @@ class ContestService:
     def ledger(self) -> ContestLedger:
         return ContestLedger(self.database_path, self.league_year)
 
-    def default_week(self) -> int:
+    def current_week(self) -> int:
         return max(1, int(getattr(self.league, "current_week", 1) or 1))
 
-    def settle(self, week: int, settled_by: int | None = None) -> str:
-        with self.ledger() as ledger:
-            payouts = settle_week(ledger, self.league, week, settled_by=settled_by)
-            return f"{format_week(week, payouts, contest_for_week(week))}\n\n{format_season(ledger.season_totals())}"
+    def display_week(self, now: datetime | None = None) -> int:
+        local_now = now.astimezone(self.timezone) if now else datetime.now(self.timezone)
+        current = self.current_week()
+        return max(1, current - 1) if local_now.weekday() in {1, 2} else current
 
-    def report(self, week: int) -> str:
+    def report(self, now: datetime | None = None) -> str:
+        refresh = getattr(self.league, "refresh", None)
+        if callable(refresh):
+            refresh()
+
+        current = self.current_week()
+        target = self.display_week(now)
+        completed_through = current - 1
         with self.ledger() as ledger:
-            payouts = ledger.week_payouts(week)
-            body = format_week(week, payouts, contest_for_week(week))
-            if not payouts:
-                body += f"\n_Run `/weeklycontest settle {week}` to score it._"
-            return f"{body}\n\n{format_season(ledger.season_totals())}"
+            for week in range(1, completed_through + 1):
+                if not ledger.is_settled(week):
+                    settle_week(ledger, self.league, week)
+
+            is_final = target <= completed_through
+            if is_final:
+                payouts = ledger.week_payouts(target)
+            else:
+                payouts = calculate_week(ledger, self.league, target)
+
+            sections = [
+                format_week(target, payouts, contest_for_week(target), status="Final" if is_final else "Pending"),
+                format_season(ledger.season_totals()),
+            ]
+            local_now = now.astimezone(self.timezone) if now else datetime.now(self.timezone)
+            if local_now.weekday() in {1, 2}:
+                sections.insert(1, format_upcoming(target + 1, contest_for_week(target + 1)))
+            return "\n\n".join(sections)
 
     def season(self) -> str:
         with self.ledger() as ledger:
@@ -750,44 +782,39 @@ class ContestService:
         return buffer.getvalue()
 
 
-def format_week(week: int, payouts: list[Payout], contest: Contest | None) -> str:
-    lines = [f"**Week {week} payouts**"]
+def format_week(week: int, payouts: list[Payout], contest: Contest | None, status: str | None = None) -> str:
+    status_text = f" — {status}" if status else ""
+    lines = [f"**Week {week} results{status_text}**"]
     if contest:
-        lines.append(f"_{contest.name}: {contest.rule}_")
+        lines.extend([f"**{contest.name}**", f"_{contest.rule}_"])
 
     if not payouts:
-        lines.append("\nNothing settled for this week yet.")
+        lines.append("No results are available yet.")
         return "\n".join(lines)
 
-    table = [
-        [
-            "High score" if payout.category == HIGH_SCORE else "Contest",
-            payout.team_name,
-            format_money(payout.amount_cents),
-            payout.detail,
-        ]
-        for payout in payouts
-    ]
-    lines.append("```")
-    lines.append(tabulate(table, headers=["Pot", "Team", "Won", "Result"], tablefmt="github"))
-    lines.append("```")
+    for payout in payouts:
+        category = "High score" if payout.category == HIGH_SCORE else contest.name if contest else "Contest"
+        lines.append(f"- **{category}:** {payout.team_name} ({payout.detail})")
 
     if contest and not any(payout.category == SIDE_CONTEST for payout in payouts):
-        lines.append(f"_The {contest.name} pot is unresolved. Log the result to settle it._")
+        lines.append(f"- **{contest.name}:** No result is available yet.")
+    return "\n".join(lines)
+
+
+def format_upcoming(week: int, contest: Contest | None) -> str:
+    lines = [f"**Coming in Week {week}**"]
+    if contest:
+        lines.extend([f"**{contest.name}**", contest.rule])
+    else:
+        lines.append("No side contest is scheduled.")
     return "\n".join(lines)
 
 
 def format_season(totals: list[tuple[str, int, int]]) -> str:
     if not totals:
         return "**Season totals**\nNo payouts recorded yet."
-    table = [[index, name, format_money(cents), wins] for index, (name, cents, wins) in enumerate(totals, start=1)]
-    banked = format_money(sum(cents for _, cents, _ in totals))
-    return "\n".join(
-        [
-            "**Season totals**",
-            "```",
-            tabulate(table, headers=["#", "Team", "Won", "Pots"], tablefmt="github"),
-            "```",
-            f"_{banked} paid out so far._",
-        ]
-    )
+    lines = ["**Season totals**"]
+    for index, (name, cents, wins) in enumerate(totals, start=1):
+        pot_label = "pot" if wins == 1 else "pots"
+        lines.append(f"{index}. {name} — {format_money(cents)} ({wins} {pot_label})")
+    return "\n".join(lines)
