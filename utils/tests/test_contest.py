@@ -405,7 +405,7 @@ def test_week_output_names_the_contest_and_lists_payouts(tmp_path):
         rendered = format_week(1, payouts, contest_for_week(1))
 
         assert "Opening Week Bang" in rendered
-        assert "$20.00" in rendered
+        assert "$20.00" not in rendered
         assert "Alpha" in rendered
         assert "```" not in rendered
 
@@ -449,7 +449,8 @@ def test_report_shows_live_pending_results_during_current_week(tmp_path):
 
     assert "**Week 1 results — Pending**" in rendered
     assert "**Opening Week Bang**" in rendered
-    assert "- **High score:** Alpha — $20.00 (30.00 points)" in rendered
+    assert "- **High score:** Alpha (30.00 points)" in rendered
+    assert "$20.00" not in rendered
     assert league.refreshes == 1
     with service.ledger() as ledger:
         assert not ledger.is_settled(1)
