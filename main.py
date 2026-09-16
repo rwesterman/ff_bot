@@ -12,6 +12,7 @@ from urllib3.exceptions import HTTPError
 
 from utils.chat_rag import HistoryRagService, format_discord_answer, split_discord_message
 from utils.commands import Commands
+from utils.penalties import PenaltyMonitor, PenaltyStore, deliver_pending
 from utils.rules import RulesService, temporary_pdf_path, write_rules_pdf
 from utils.transaction import Transaction
 
@@ -43,6 +44,27 @@ def initialize_bot():
 
 
 def register_league_commands(bot, commander):
+    @bot.command(name="penalties", brief="List recorded penalty bonuses for a week.")
+    async def penalties(ctx, week: int):
+        if not 1 <= week <= 18:
+            await ctx.send("Week must be between 1 and 18. Usage: `/penalties <week>`")
+            return
+        try:
+            pages = await asyncio.to_thread(commander.get_penalties, week)
+            for page in pages:
+                await ctx.send(page, allowed_mentions=discord.AllowedMentions.none())
+        except Exception:
+            logger.exception("Could not retrieve logged penalty bonuses")
+            await ctx.send("I could not read the penalty bonus database. Please try again later.")
+
+    @penalties.error
+    async def penalties_error(ctx, error):
+        if isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
+            await ctx.send("Usage: `/penalties <week>` with a week number from 1 to 18, for example `/penalties 1`.")
+        else:
+            logger.error("Penalty command failed: %s", error)
+            await ctx.send("I could not show the logged penalties. Please try again later.")
+
     @bot.command(name="waivers", brief="Show recent waiver activity.")
     async def waivers(ctx):
         sort_by_bid = True
@@ -238,13 +260,56 @@ def configure_history_refresh(bot, rag_service):
     bot.history_refresh_loop = refresh_chat_history
 
 
+def configure_penalty_polling(bot, commander, store, channel_id):
+    monitor = PenaltyMonitor(commander, store)
+
+    @tasks.loop(minutes=10)
+    async def poll_penalties():
+        try:
+            await asyncio.to_thread(monitor.poll)
+        except Exception:
+            logger.exception("Penalty polling failed; will retry in ten minutes")
+        # A source outage must not prevent delivery of already recorded bonuses.
+        try:
+
+            async def send(text):
+                channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+                message = await channel.send(
+                    text,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return message.id
+
+            await deliver_pending(store, commander.league.current_week, send)
+        except Exception:
+            logger.exception("Penalty announcement failed; pending messages will be retried")
+
+    @poll_penalties.before_loop
+    async def before_poll_penalties():
+        await bot.wait_until_ready()
+
+    @bot.listen("on_ready")
+    async def start_penalty_polling():
+        if not poll_penalties.is_running():
+            poll_penalties.start()
+
+    bot.penalty_poll_loop = poll_penalties
+
+
 def create_application():
     load_dotenv(Path(__file__).with_name(".env"), override=False)
     bot = initialize_bot()
-    commander = Commands(initialize_league())
-    register_league_commands(bot, commander)
-
+    league = initialize_league()
     database_path = Path(os.getenv("CHAT_HISTORY_DB", "data/chat_history.db"))
+    penalty_store = PenaltyStore(database_path, league.league_id, league.year)
+    commander = Commands(league, penalty_store=penalty_store)
+    register_league_commands(bot, commander)
+    channel_id = os.getenv("PENALTY_CHANNEL_ID", "").strip()
+    if channel_id:
+        configure_penalty_polling(bot, commander, penalty_store, int(channel_id))
+    else:
+        logger.warning("Penalty polling is disabled: set PENALTY_CHANNEL_ID")
+
     try:
         rag_service = HistoryRagService.from_environment(database_path)
     except RuntimeError as error:

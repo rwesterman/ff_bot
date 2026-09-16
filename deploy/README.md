@@ -207,6 +207,8 @@ either provide a valid value or remove the line entirely; an empty value is not 
 Important settings are:
 
 - `DISCORD_BOT_TOKEN`, `LEAGUE_ID`, and `LEAGUE_YEAR` — required to start the bot.
+- `PENALTY_CHANNEL_ID` — Discord channel for ten-minute unsportsmanlike-conduct bonus announcements. Blank/unset
+  disables polling. Bonus records use the existing persistent database; see [penalty bonuses](../docs/penalty-bonuses.md).
 - `ESPN_S2` and `SWID` — required only for a private ESPN league; remove both for a public league.
 - `OPENAI_API_KEY` — required for `/ask` embeddings and `/rules`.
 - `DEEPSEEK_API_KEY` — required for `/ask` and `/rules` answers.
