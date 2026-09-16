@@ -13,7 +13,7 @@ The README and some supporting files still describe the project's older GroupMe,
 - `main.py` — runtime entry point and Discord command handlers. Runtime initialization is behind `create_application()`
   and `main()`; keep imports side-effect free for unit tests and utility scripts.
 - `utils/commands.py` — chat-independent fantasy-football calculations and text formatting. Most feature logic belongs here and should be tested with a fake league object.
-- `utils/contest.py` — weekly payout ledger for `/weeklycontest`: a cached ESPN snapshot per player-week, the
+- `utils/contest.py` — weekly payout ledger for `/weeklycontests`: a cached ESPN snapshot per player-week, the
   side-contest resolvers, tie-splitting, and season totals. Payouts are recorded once and read back from SQLite so
   ESPN stat corrections cannot move money that was already awarded.
 - `utils/contest_schedule.py` — the league's fourteen side contests as data, including which ESPN scoring period each
@@ -60,8 +60,9 @@ Run the bot only when valid credentials are available:
 LEAGUE_ID=... LEAGUE_YEAR=... DISCORD_BOT_TOKEN=... uv run --frozen python main.py
 ```
 
-`CONTEST_ADMIN_IDS` accepts a comma-separated list of Discord user IDs allowed to settle weeks and log penalties. When
-it is unset every user may write to the payout ledger, which is intended only for local development.
+`CONTEST_ADMIN_IDS` accepts a comma-separated list of Discord user IDs allowed to log penalties. When it is unset every
+user may log penalties, which is intended only for local development. `CONTEST_TIMEZONE` controls the weekday boundary
+for automatic weekly-contest reporting and defaults to `America/Chicago`.
 
 Private ESPN leagues also require `ESPN_S2` and `SWID`. `main.py` adds missing braces around `SWID`. Public leagues use neither value. The webhook variables described in the README (`BOT_ID`, `SLACK_WEBHOOK_URL`, and `DISCORD_WEBHOOK_URL`) belong to legacy clients and are not read by the active entry point.
 
@@ -80,8 +81,8 @@ Private ESPN leagues also require `ESPN_S2` and `SWID`. `main.py` adds missing b
 
 - Keep Discord transport concerns in `main.py` and league/query/formatting logic in `utils/commands.py`.
 - Store money as integer cents and split pots with `contest.split_pot`, which distributes the remainder so recorded
-  payouts always sum back to the pot. Never render a payout by recomputing it from live ESPN data.
-- `/weeklycontest` reads up to fourteen ESPN weeks, so its handlers dispatch through `asyncio.to_thread` and open a
+  payouts always sum back to the pot. Pending results are recomputed from ESPN; final results come from the ledger.
+- `/weeklycontests` reads up to fourteen ESPN weeks, so its handlers dispatch through `asyncio.to_thread` and open a
   short-lived SQLite connection per operation rather than sharing one across threads.
 - Preserve asynchronous `discord.py` handler behavior: await sends and edits, and keep messages within Discord's size limits. The waiver command currently emits batches of ten table rows for this reason.
 - ESPN objects are mutable and network-backed. `Commands.refresh_league()` is cached for one hour with a single-entry `TTLCache`; consider that cache when testing refresh-dependent behavior.

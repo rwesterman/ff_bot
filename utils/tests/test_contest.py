@@ -1,9 +1,11 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 from utils import contest
 from utils.contest import (
     ContestLedger,
+    ContestService,
     PlayerWeek,
     ResolutionContext,
     build_payouts,
@@ -296,6 +298,11 @@ class FakeLeague:
         self.teams = [SimpleNamespace(team_id=1, team_name="Alpha"), SimpleNamespace(team_id=2, team_name="Beta")]
         self.draft = []
         self.calls = []
+        self.current_week = 1
+        self.refreshes = 0
+
+    def refresh(self):
+        self.refreshes += 1
 
     def box_scores(self, week=None):
         self.calls.append(week)
@@ -400,14 +407,64 @@ def test_week_output_names_the_contest_and_lists_payouts(tmp_path):
         assert "Opening Week Bang" in rendered
         assert "$20.00" in rendered
         assert "Alpha" in rendered
+        assert "```" not in rendered
 
 
-def test_season_output_reports_the_running_total():
+def test_season_output_uses_a_numbered_list_without_redundant_paid_total():
     rendered = format_season([("Alpha", 4000, 2), ("Beta", 1000, 1)])
 
-    assert "$50.00 paid out so far." in rendered
-    assert "Alpha" in rendered
+    assert "1. Alpha — $40.00 (2 pots)" in rendered
+    assert "2. Beta — $10.00 (1 pot)" in rendered
+    assert "paid out so far" not in rendered
+    assert "```" not in rendered
 
 
 def test_empty_season_output_is_friendly():
     assert "No payouts recorded yet." in format_season([])
+
+
+def test_display_week_uses_current_week_thursday_through_monday(tmp_path):
+    league = FakeLeague()
+    league.current_week = 4
+    service = ContestService(league, tmp_path / "contest.db", 2026, timezone=ZoneInfo("UTC"))
+
+    assert service.display_week(datetime(2026, 9, 17, 12, tzinfo=UTC)) == 4
+    assert service.display_week(datetime(2026, 9, 21, 12, tzinfo=UTC)) == 4
+
+
+def test_display_week_uses_previous_week_tuesday_and_wednesday(tmp_path):
+    league = FakeLeague()
+    league.current_week = 4
+    service = ContestService(league, tmp_path / "contest.db", 2026, timezone=ZoneInfo("UTC"))
+
+    assert service.display_week(datetime(2026, 9, 15, 12, tzinfo=UTC)) == 3
+    assert service.display_week(datetime(2026, 9, 16, 12, tzinfo=UTC)) == 3
+
+
+def test_report_shows_live_pending_results_during_current_week(tmp_path):
+    league = FakeLeague()
+    service = ContestService(league, tmp_path / "contest.db", 2026, timezone=ZoneInfo("UTC"))
+
+    rendered = service.report(datetime(2026, 9, 17, 12, tzinfo=UTC))
+
+    assert "**Week 1 results — Pending**" in rendered
+    assert "**Opening Week Bang**" in rendered
+    assert "- **High score:** Alpha — $20.00 (30.00 points)" in rendered
+    assert league.refreshes == 1
+    with service.ledger() as ledger:
+        assert not ledger.is_settled(1)
+
+
+def test_report_automatically_records_final_results_and_shows_next_challenge(tmp_path):
+    league = FakeLeague()
+    league.current_week = 2
+    service = ContestService(league, tmp_path / "contest.db", 2026, timezone=ZoneInfo("UTC"))
+
+    rendered = service.report(datetime(2026, 9, 15, 12, tzinfo=UTC))
+
+    assert "**Week 1 results — Final**" in rendered
+    assert "**Coming in Week 2**" in rendered
+    assert "Ronnie's Failed Rule: AFC Edition" in rendered
+    with service.ledger() as ledger:
+        assert ledger.is_settled(1)
+        assert sum(payout.amount_cents for payout in ledger.week_payouts(1)) == 4000

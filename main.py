@@ -237,51 +237,45 @@ def register_contest_commands(bot, contest_service):
         await ctx.send("Only the league treasurer can change the payout ledger.")
         logger.info("Rejected contest write from %s", ctx.author.id)
 
-    @bot.group(name="weeklycontest", invoke_without_command=True, brief="Weekly payouts and season totals.")
-    async def weeklycontest(ctx, week: int | None = None):
-        target = week or contest_service.default_week()
-        await ctx.send(await asyncio.to_thread(contest_service.report, target))
-
-    @weeklycontest.command(name="settle", brief="Score a week and record its payouts.")
-    async def settle(ctx, week: int | None = None):
-        if not contest_service.is_admin(ctx.author.id):
-            await deny_non_admin(ctx)
-            return
-        target = week or contest_service.default_week()
-        status = await ctx.send(f"Scoring week {target}...")
+    @bot.group(
+        name="weeklycontests",
+        aliases=["weeklycontest"],
+        invoke_without_command=True,
+        brief="Current weekly results and season totals.",
+    )
+    async def weeklycontests(ctx):
         try:
-            await status.edit(content=await asyncio.to_thread(contest_service.settle, target, ctx.author.id))
+            await ctx.send(await asyncio.to_thread(contest_service.report))
         except Exception:
-            logger.exception("Failed to settle contest week %s", target)
-            await status.edit(content=f"I could not score week {target}. ESPN may be unavailable right now.")
+            logger.exception("Failed to retrieve weekly contest results")
+            await ctx.send("I could not retrieve the weekly contest results. ESPN may be unavailable right now.")
 
-    @weeklycontest.command(name="totals", brief="Season payout totals.")
+    @weeklycontests.command(name="totals", brief="Season payout totals.")
     async def totals(ctx):
         await ctx.send(await asyncio.to_thread(contest_service.season))
 
-    @weeklycontest.command(name="penalty", brief="Log taunting/unsportsmanlike penalties for week 13.")
+    @weeklycontests.command(name="penalty", brief="Log taunting/unsportsmanlike penalties for week 13.")
     async def penalty(ctx, week: int, team: str, count: int, *, player: str):
         if not contest_service.is_admin(ctx.author.id):
             await deny_non_admin(ctx)
             return
         await ctx.send(await asyncio.to_thread(contest_service.log_penalty, week, team, player, count))
 
-    @weeklycontest.command(name="export", brief="Download the payout ledger as CSV.")
+    @weeklycontests.command(name="export", brief="Download the payout ledger as CSV.")
     async def export(ctx):
         payload = await asyncio.to_thread(contest_service.export_csv)
         attachment = discord.File(io.BytesIO(payload.encode()), filename=f"payouts-{contest_service.league_year}.csv")
         await ctx.send("Full payout ledger attached.", file=attachment)
 
-    @weeklycontest.error
-    @settle.error
+    @weeklycontests.error
     @penalty.error
     async def contest_error(ctx, error):
         if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send("Usage: `/weeklycontest penalty <week> <team> <count> <player>`")
+            await ctx.send("Usage: `/weeklycontests penalty <week> <team> <count> <player>`")
         elif isinstance(error, commands.BadArgument):
-            await ctx.send("That does not look like a week number. Try `/weeklycontest 5`.")
+            await ctx.send("That does not look like a week number.")
         else:
-            logger.error("Error with weeklycontest command: %s", error)
+            logger.error("Error with weeklycontests command: %s", error)
 
 
 def configure_history_refresh(bot, rag_service):
