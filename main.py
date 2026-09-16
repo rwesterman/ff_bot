@@ -13,7 +13,7 @@ from urllib3.exceptions import HTTPError
 
 from utils.chat_rag import HistoryRagService, format_discord_answer, split_discord_message
 from utils.commands import Commands
-from utils.penalties import PenaltyStore, deliver_pending
+from utils.penalties import PenaltyStore, deliver_pending, penalty_poll_minutes
 from utils.contest import ContestService
 from utils.rules import RulesService, temporary_pdf_path, write_rules_pdf
 from utils.transaction import Transaction
@@ -311,13 +311,14 @@ def configure_history_refresh(bot, rag_service):
 
 def configure_penalty_polling(bot, commander, store, channel_id):
     monitor = commander.penalty_monitor
+    poll_minutes = penalty_poll_minutes()
 
-    @tasks.loop(minutes=10)
+    @tasks.loop(minutes=poll_minutes)
     async def poll_penalties():
         try:
             await asyncio.to_thread(monitor.poll)
         except Exception:
-            logger.exception("Penalty polling failed; will retry in ten minutes")
+            logger.exception("Penalty polling failed; will retry in %s minutes", poll_minutes)
         # A source outage must not prevent delivery of already recorded bonuses.
         try:
 

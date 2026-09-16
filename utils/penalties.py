@@ -7,6 +7,7 @@ from contextlib import closing
 import asyncio
 from dataclasses import dataclass
 import logging
+import os
 from pathlib import Path
 import re
 import sqlite3
@@ -22,6 +23,18 @@ ACTIVE_SLOTS = {"QB", "RB", "WR", "TE", "K", "RB/WR", "WR/TE", "RB/WR/TE", "OP",
 CORE_URL = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl"
 SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 PENALTY_CLAUSE = re.compile(r"penalty on\s+([A-Z]+)-(?:\d+-)?([^,]+),\s*([^,\.]+)", re.I)
+
+
+def penalty_poll_minutes():
+    """Read the scheduled polling interval at startup, in whole minutes."""
+    value = os.getenv("PENALTY_POLL_MINUTES", "10")
+    try:
+        minutes = int(value)
+    except ValueError:
+        raise ValueError("PENALTY_POLL_MINUTES must be a positive integer") from None
+    if minutes <= 0:
+        raise ValueError("PENALTY_POLL_MINUTES must be a positive integer")
+    return minutes
 
 
 @dataclass(frozen=True)
@@ -91,7 +104,7 @@ class EspnPenaltySource:
             result.append(Penalty(str(game_id), str(play["id"]), index, player_id, name, description, week))
         return result
 
-    def fetch_week(self, season, week):
+    def fetch_games(self, season, week):
         scoreboard = self._get(SCOREBOARD_URL, dates=season, seasontype=2, week=week, limit=100)
         if (
             int(scoreboard["season"]["year"]) != season
@@ -99,19 +112,26 @@ class EspnPenaltySource:
             or int(scoreboard["week"]["number"]) != week
         ):
             raise ValueError("ESPN returned a different season/week than requested")
+        return scoreboard["events"]
+
+    def fetch_game(self, season, week, game_id):
         penalties = []
-        for game in scoreboard["events"]:
+        page = 1
+        while True:
+            data = self._get(f"{CORE_URL}/events/{game_id}/competitions/{game_id}/plays", limit=400, page=page)
+            for play in data["items"]:
+                penalties.extend(self.parse_play(season, week, game_id, play))
+            if page >= int(data["pageCount"]):
+                break
+            page += 1
+        return penalties
+
+    def fetch_week(self, season, week):
+        penalties = []
+        for game in self.fetch_games(season, week):
             if game["status"]["type"]["state"] == "pre":
                 continue
-            game_id = game["id"]
-            page = 1
-            while True:
-                data = self._get(f"{CORE_URL}/events/{game_id}/competitions/{game_id}/plays", limit=400, page=page)
-                for play in data["items"]:
-                    penalties.extend(self.parse_play(season, week, game_id, play))
-                if page >= int(data["pageCount"]):
-                    break
-                page += 1
+            penalties.extend(self.fetch_game(season, week, game["id"]))
         return penalties
 
 
@@ -140,6 +160,30 @@ class PenaltyStore:
             columns = {row["name"] for row in db.execute("PRAGMA table_info(penalty_bonuses)")}
             if "notification_suppressed" not in columns:
                 db.execute("ALTER TABLE penalty_bonuses ADD COLUMN notification_suppressed INTEGER NOT NULL DEFAULT 0")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS penalty_game_checks (
+                    league_id INTEGER NOT NULL, season INTEGER NOT NULL, game_id TEXT NOT NULL,
+                    checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (league_id, season, game_id)
+                )
+            """)
+
+    def completed_game_ids(self):
+        with closing(self.connect()) as db:
+            return {
+                row[0]
+                for row in db.execute(
+                    "SELECT game_id FROM penalty_game_checks WHERE league_id = ? AND season = ?",
+                    (self.league_id, self.season),
+                )
+            }
+
+    def mark_game_checked(self, game_id):
+        with closing(self.connect()) as db, db:
+            db.execute(
+                "INSERT OR IGNORE INTO penalty_game_checks (league_id, season, game_id) VALUES (?, ?, ?)",
+                (self.league_id, self.season, str(game_id)),
+            )
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=30)
@@ -261,6 +305,7 @@ class PenaltyMonitor:
         self.source = source or EspnPenaltySource()
         self.caught_up = False
         self.poll_lock = RLock()
+        self.outstanding_weeks = set()
 
     def _record_week(self, week, *, notify):
         penalties = self.source.fetch_week(self.store.season, week)
@@ -286,7 +331,28 @@ class PenaltyMonitor:
                 league = self.commander.league
                 league.refresh()
                 current = min(league.current_week, 18)
-            weeks = range(1 if not self.caught_up else max(1, current - 1), current + 1)
-            for week in weeks:
-                self._record_week(week, notify=True)
+            weeks = set(range(1 if not self.caught_up else max(1, current - 1), current + 1))
+            checked = self.store.completed_game_ids()
+            for week in sorted(weeks | self.outstanding_weeks):
+                games = self.source.fetch_games(self.store.season, week)
+                self.outstanding_weeks.add(week)
+                for game in games:
+                    status = game["status"]["type"]
+                    game_id = str(game["id"])
+                    completed = status.get("completed", False)
+                    if not completed and status["state"] != "in":
+                        continue
+                    if completed and game_id in checked:
+                        continue
+                    penalties = self.source.fetch_game(self.store.season, week, game_id)
+                    if penalties:
+                        with self.commander.league_lock:
+                            boxes = league.box_scores(week=week)
+                            record_starter_penalties(self.store, penalties, boxes)
+                    # Only checkpoint after the entire feed and any awards were saved successfully.
+                    if completed:
+                        self.store.mark_game_checked(game_id)
+                        checked.add(game_id)
+                if games and all(str(game["id"]) in checked for game in games):
+                    self.outstanding_weeks.discard(week)
             self.caught_up = True

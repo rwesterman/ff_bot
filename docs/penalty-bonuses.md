@@ -1,7 +1,10 @@
 # Unsportsmanlike conduct bonuses
 
 Set `PENALTY_CHANNEL_ID` to the numeric Discord channel ID for announcements. The bot needs View Channel and Send
-Messages there. Polling starts when Discord is ready and repeats every ten minutes, independently of chat-history Q&A.
+Messages there. Polling starts when Discord is ready and repeats every ten minutes by default, independently of chat-history Q&A.
+Set `PENALTY_POLL_MINUTES` to a positive whole number of minutes (for example, `PENALTY_POLL_MINUTES=5`).
+When unset, it defaults to `10`; invalid values fail startup when polling is enabled. Restart the bot after changing it.
+For production Docker Compose, set this in the server's `app.env` and recreate the bot container to apply it.
 An unset/blank channel ID disables polling. Existing recorded bonuses still apply to scores.
 
 Use `/penalties 1` (or another week from 1 to 18) to inspect the current league/season's recorded awards. Like the other
@@ -16,8 +19,15 @@ Feed or database failures produce an error rather than presenting an old table a
 
 The public ESPN scoreboard and detailed play-by-play JSON feeds supply regular-season games and penalized athlete IDs.
 These are undocumented public endpoints and may change. Failures are logged and retried, not treated as a clean week.
-The first poll after each restart checks Weeks 1 through the current week; subsequent polls revisit the current and
-previous weeks. This catches downtime and week rollover. Feed publication can lag the ten-minute polling interval.
+Scheduled polls check the lightweight scoreboard at the configured interval, but fetch play-by-play only for in-progress games
+and completed games without a successful final check. Each completed game's final check is saved in `penalty_game_checks`
+in the league database, after its feed has been read and eligible awards saved. Failed checks retry on a later poll;
+successful checks survive restarts. This includes games that finished while the bot was offline.
+The first poll after each restart checks scoreboards for Weeks 1 through the current week; subsequent polls revisit the
+current and previous weeks, plus any older weeks with unfinished games. Pregame games do not trigger play-by-play reads.
+Manual `/penalties <week>` refreshes bypass final-check records and recheck all played games in that week silently.
+Feed publication can lag the polling interval; corrections published after a successful final check require
+a manual refresh to discover new awards.
 
 Every recorded Unsportsmanlike Conduct or Taunting penalty earns ten points if its ESPN athlete ID matches an offensive
 player (QB/RB/WR/TE/FB/K) in an active slot, including flex, in that week's ESPN fantasy box score. Bench, IR, free agents,

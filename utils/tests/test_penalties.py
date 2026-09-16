@@ -17,8 +17,27 @@ from utils.penalties import (
     PenaltyStore,
     announcement,
     deliver_pending,
+    penalty_poll_minutes,
     record_starter_penalties,
 )
+
+
+def test_poll_interval_default(monkeypatch):
+    monkeypatch.delenv("PENALTY_POLL_MINUTES", raising=False)
+    assert penalty_poll_minutes() == 10
+
+
+@pytest.mark.parametrize("value, expected", [("1", 1), ("5", 5), ("30", 30)])
+def test_poll_interval_override(monkeypatch, value, expected):
+    monkeypatch.setenv("PENALTY_POLL_MINUTES", value)
+    assert penalty_poll_minutes() == expected
+
+
+@pytest.mark.parametrize("value", ["", "0", "-1", "1.5", "abc", "nan", "inf"])
+def test_poll_interval_rejects_invalid_values(monkeypatch, value):
+    monkeypatch.setenv("PENALTY_POLL_MINUTES", value)
+    with pytest.raises(ValueError, match="PENALTY_POLL_MINUTES must be a positive integer"):
+        penalty_poll_minutes()
 
 
 @pytest.fixture
@@ -238,22 +257,30 @@ def test_poll_catches_up_and_uses_event_week_lineups(store, penalty, league):
     boxes = league.box_scores.return_value
     league.box_scores.side_effect = lambda week: boxes if week == 1 else []
     source = Mock()
-    source.fetch_week.side_effect = lambda season, week: [replace(penalty, week=week)]
+    source.fetch_games.side_effect = lambda season, week: [game(str(week), "post", True)]
+    source.fetch_game.side_effect = lambda season, week, game_id: [replace(penalty, game_id=game_id, week=week)]
     monitor = PenaltyMonitor(Commands(league, store), store, source)
     monitor.poll()
-    assert [call.args[1] for call in source.fetch_week.call_args_list] == [1, 2, 3, 4]
+    assert [call.args[1] for call in source.fetch_games.call_args_list] == [1, 2, 3, 4]
     assert store.totals(1) == {2: 10}
     assert store.totals(4) == {}
     source.reset_mock()
     monitor.poll()
-    assert [call.args[1] for call in source.fetch_week.call_args_list] == [3, 4]
+    assert [call.args[1] for call in source.fetch_games.call_args_list] == [3, 4]
+    source.fetch_game.assert_not_called()
     assert len(store.pending()) == 1
     assert league.refresh.call_count == 2
 
 
 def test_failed_catchup_retries_without_duplicate_points(store, penalty, league):
     source = Mock()
-    source.fetch_week.side_effect = [[penalty], requests.Timeout(), [penalty], []]
+    source.fetch_games.side_effect = [
+        [game("game1", "post", True)],
+        requests.Timeout(),
+        [game("game1", "post", True)],
+        [],
+    ]
+    source.fetch_game.return_value = [penalty]
     monitor = PenaltyMonitor(Commands(league, store), store, source)
     with pytest.raises(requests.Timeout):
         monitor.poll()
@@ -261,6 +288,70 @@ def test_failed_catchup_retries_without_duplicate_points(store, penalty, league)
     monitor.poll()
     assert store.totals(1) == {2: 10}
     assert monitor.caught_up
+
+
+def game(game_id="game1", state="in", completed=False):
+    return {"id": game_id, "status": {"type": {"state": state, "completed": completed}}}
+
+
+def test_scheduled_poll_only_fetches_active_and_unchecked_final_games(store, penalty, league):
+    league.current_week = 1
+    source = Mock()
+    source.fetch_games.return_value = [game("future", "pre"), game(), game("done", "post", True)]
+    source.fetch_game.return_value = []
+    monitor = PenaltyMonitor(Commands(league, store), store, source)
+    monitor.poll()
+    assert [c.args[2] for c in source.fetch_game.call_args_list] == ["game1", "done"]
+    source.fetch_game.reset_mock()
+    monitor.poll()
+    source.fetch_game.assert_called_once_with(2026, 1, "game1")
+    # A penalty appearing only in the final response must still get recorded.
+    source.fetch_games.return_value = [game("game1", "post", True)]
+    source.fetch_game.return_value = [penalty]
+    monitor.poll()
+    assert store.totals(1) == {2: 10}
+    assert store.completed_game_ids() == {"done", "game1"}
+    source.fetch_game.reset_mock()
+    restarted_store = PenaltyStore(store.path, 123, 2026)
+    PenaltyMonitor(Commands(league, restarted_store), restarted_store, source).poll()
+    source.fetch_game.assert_not_called()
+
+
+@pytest.mark.parametrize("failure", ["feed", "lineup", "database"])
+def test_final_check_retries_until_read_and_award_succeed(store, penalty, league, monkeypatch, failure):
+    league.current_week = 1
+    source = Mock()
+    source.fetch_games.return_value = [game("game1", "post", True)]
+    source.fetch_game.return_value = [penalty]
+    monitor = PenaltyMonitor(Commands(league, store), store, source)
+    with monkeypatch.context() as patch:
+        target, attr = {
+            "feed": (source, "fetch_game"),
+            "lineup": (league, "box_scores"),
+            "database": (store, "award"),
+        }[failure]
+        patch.setattr(target, attr, Mock(side_effect=RuntimeError("temporary failure")))
+        with pytest.raises(RuntimeError):
+            monitor.poll()
+    assert store.completed_game_ids() == set()
+    monitor.poll()
+    assert store.completed_game_ids() == {"game1"}
+    assert store.totals(1) == {2: 10}
+
+
+def test_idle_poll_and_delayed_game_beyond_previous_week(store, league):
+    league.current_week = 1
+    source = Mock()
+    source.fetch_games.return_value = [game("late", "pre")]
+    source.fetch_game.return_value = []
+    monitor = PenaltyMonitor(Commands(league, store), store, source)
+    monitor.poll()
+    source.fetch_game.assert_not_called()
+    league.box_scores.assert_not_called()
+    league.current_week = 4
+    source.fetch_games.side_effect = lambda season, week: [game("late", "post", True)] if week == 1 else []
+    monitor.poll()
+    source.fetch_game.assert_called_once_with(2026, 1, "late")
 
 
 def test_scores_and_standings_flip_without_mutating_espn(store, penalty, league):
@@ -339,6 +430,8 @@ def test_manual_refresh_fetches_week_and_keeps_new_awards_silent_after_restart(s
     restarted = PenaltyStore(store.path, 123, 2026)
     monitor = PenaltyMonitor(Commands(league, restarted), restarted, source)
     source.fetch_week.side_effect = lambda season, week: [penalty] if week == 1 else []
+    source.fetch_games.side_effect = lambda season, week: [game("game1", "post", True)] if week == 1 else []
+    source.fetch_game.return_value = [penalty]
     monitor.poll()
     assert restarted.totals(1) == {2: 10}
     send = AsyncMock()
@@ -355,6 +448,24 @@ def test_manual_refresh_preserves_existing_pending_announcements(store, penalty,
     assert "Pending" in pages[0] and "Silent" in pages[0]
     assert [row["play_id"] for row in store.pending()] == ["play1"]
     assert store.totals(1) == {2: 20}
+
+
+def test_manual_refresh_bypasses_final_checkpoint(store, penalty, league):
+    store.mark_game_checked(penalty.game_id)
+    commander = Commands(league, store)
+    commander.penalty_monitor.source = Mock()
+    commander.penalty_monitor.source.fetch_week.return_value = [penalty]
+    commander.refresh_penalties(1)
+    commander.penalty_monitor.source.fetch_week.assert_called_once_with(2026, 1)
+    assert store.totals(1) == {2: 10}
+    assert store.pending() == []
+
+
+def test_final_checkpoints_are_scoped_to_league_and_season(store):
+    store.mark_game_checked("game1")
+    assert PenaltyStore(store.path, 456, 2026).completed_game_ids() == set()
+    assert PenaltyStore(store.path, 123, 2027).completed_game_ids() == set()
+    assert PenaltyStore(store.path, 123, 2026).completed_game_ids() == {"game1"}
 
 
 def test_manual_refresh_failure_propagates_and_future_week_is_rejected(store, league):
