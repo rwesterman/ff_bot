@@ -7,8 +7,16 @@ recreate the bot from that exact image.
 The bot opens outbound HTTPS and Discord Gateway connections. It is not an HTTP server, so it does not need Caddy,
 Nginx, or inbound ports 80 and 443. The only expected inbound port is SSH on TCP 22 for administration and deployment.
 
-The SQLite database is stored on the Droplet at `/opt/ff-bot/data/chat_history.db` and bind-mounted inside the container
-as `/data/chat_history.db`. It is not stored in the Git repository or container image.
+SQLite storage is split by purpose on the existing persistent bind mount:
+
+- Chat/RAG and rules: `/opt/ff-bot/data/chat_history.db`, mounted as `/data/chat_history.db` (`CHAT_HISTORY_DB`).
+- Penalty bonuses and weekly contests: `/opt/ff-bot/data/league.db`, mounted as `/data/league.db` (`LEAGUE_DB`).
+
+Neither database is stored in Git or the container image. Back up both files using SQLite-aware backups.
+The league database is created automatically. No migration from the old shared database is performed; old tables
+remain untouched. After deploying the split, run `/weeklycontest settle 1` in Discord to rebuild completed Week 1,
+then verify `/weeklycontest 1` and `/weeklycontest totals`. Enabled penalty polling backfills prior weeks automatically
+and will send announcements again because notification receipts are not migrated.
 
 ## Before starting
 
@@ -208,7 +216,7 @@ Important settings are:
 
 - `DISCORD_BOT_TOKEN`, `LEAGUE_ID`, and `LEAGUE_YEAR` — required to start the bot.
 - `PENALTY_CHANNEL_ID` — Discord channel for ten-minute unsportsmanlike-conduct bonus announcements. Blank/unset
-  disables polling. Bonus records use the existing persistent database; see [penalty bonuses](../docs/penalty-bonuses.md).
+  disables polling. Bonus records use the separate persistent league database; see [penalty bonuses](../docs/penalty-bonuses.md).
 - `ESPN_S2` and `SWID` — required only for a private ESPN league; remove both for a public league.
 - `OPENAI_API_KEY` — required for `/ask` embeddings and `/rules`.
 - `DEEPSEEK_API_KEY` — required for `/ask` and `/rules` answers.

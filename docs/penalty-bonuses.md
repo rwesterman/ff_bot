@@ -21,8 +21,9 @@ and defensive players are excluded. Declined and offsetting flags count, since t
 Ambiguous/unattributed penalties are logged and skipped; the bot never guesses from a touchdown scorer's identity.
 Multiple penalty clauses on a play are matched to penalized participants by ESPN short name; ambiguous names are skipped.
 
-`penalty_bonuses` lives in `CHAT_HISTORY_DB` (default `data/chat_history.db`), alongside the existing tables. Production's
-existing `/data` volume persists it. Rows include league/season, fantasy team ID/name, player ID/name, penalty name,
+`penalty_bonuses` lives in `LEAGUE_DB` (default `data/league.db`), alongside weekly contest records. Chat/RAG and rules
+indexes remain in `CHAT_HISTORY_DB`. Production sets `LEAGUE_DB=/data/league.db` on the existing persistent volume.
+Rows include league/season, fantasy team ID/name, player ID/name, penalty name,
 description, NFL game/play ID, occurrence, scoring week, ten points, and notification status. A unique event key prevents
 duplicate points on repeated polls or restarts. Awards are recorded before announcements; failed sends remain pending.
 Delivery is at least once: a process crash after Discord accepts a message but before SQLite records its ID can cause
@@ -37,4 +38,8 @@ This does not write scoring adjustments back to ESPN. Do not also add the same p
 Standings retain the repository's existing single-week regular-season matchup and top-half-win rules. Multiweek playoff
 score displays add bonuses across the matchup's scoring weeks. Playoff results do not change regular-season standings.
 Later feed retractions or commissioner lineup edits do not automatically revoke a persisted award; review such changes
-in the ledger. Keep database backups with the existing chat-history backup process.
+in the ledger. Back up both databases; a backup of `chat_history.db` does not include league records.
+
+When switching from shared storage, no records are migrated or deleted. The new ledger starts empty, so the first
+enabled penalty poll rediscovers past awards and sends their announcements again. Rebuild Week 1 contest payouts with
+`/weeklycontest settle 1`, then check `/weeklycontest 1` and `/weeklycontest totals`.

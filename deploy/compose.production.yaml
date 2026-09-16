@@ -10,6 +10,7 @@ services:
       - ./app.env
     environment:
       CHAT_HISTORY_DB: /data/chat_history.db
+      LEAGUE_DB: /data/league.db
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
     volumes:
