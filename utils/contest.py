@@ -1,12 +1,13 @@
 """Weekly payout tracking for the league's high-score and side-contest pots.
 
-Money is recorded, not recomputed. ESPN issues stat corrections for days after a game, so a settled
-week is written to the ledger once and every later read comes from those rows. Season totals are a
-sum over the ledger and never shift underneath a payout that has already been made.
+The ledger tracks calculated awards, not payments. Completed weeks are settled when the
+weekly report is requested. Saved results contain no previous-winner or change history.
 
 Every contest is answered from one cached snapshot per player-week, taken from `league.box_scores`,
 which returns the roster as it stood that week. Ownership over time therefore falls out of the cache:
 summing a player's weeks grouped by fantasy team credits each manager only for the weeks they held him.
+Recorded penalty bonuses are overlaid on those raw snapshots when calculating new payouts, including
+historical weeks used by cumulative contests.
 """
 
 import csv
@@ -15,7 +16,7 @@ import json
 import logging
 import os
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -89,6 +90,7 @@ CREATE TABLE IF NOT EXISTS contest_penalties (
     penalty_count INTEGER NOT NULL,
     recorded_at TEXT NOT NULL
 );
+
 """
 
 
@@ -619,11 +621,7 @@ class ContestLedger:
 
 
 def sync_weeks(ledger: ContestLedger, league, weeks, force: bool = False) -> int:
-    """Refresh every week that is not yet settled.
-
-    Settling freezes a week, which is what keeps a recorded payout stable against ESPN's later stat
-    corrections. Unsettled weeks are refetched so a lineup change or a Monday-night game is picked up.
-    """
+    """Refresh raw snapshots, including completed weeks when checking for corrections with force."""
     fetched = 0
     for week in weeks:
         if not force and ledger.is_settled(week):
@@ -643,13 +641,30 @@ def build_payouts(contest: Contest | None, high_scorers: list[Winner], side_winn
     return payouts
 
 
-def calculate_week(ledger: ContestLedger, league, week: int) -> list[Payout]:
+def adjusted_player_weeks(rows: list[PlayerWeek], penalty_store, week: int) -> list[PlayerWeek]:
+    """Overlay recorded bonuses without changing the raw ESPN snapshot in the cache.
+
+    Match both player and historical owner, so trades cannot move a bonus to another team.
+    Stat-based contests continue to use the unmodified stats and scoring breakdowns.
+    """
+    if penalty_store is None:
+        return rows
+    bonuses: dict[tuple[int, int], int] = {}
+    for bonus in penalty_store.for_week(week):
+        key = (bonus["team_id"], bonus["player_id"])
+        bonuses[key] = bonuses.get(key, 0) + bonus["points"]
+    return [replace(row, points=row.points + bonuses.get((row.team_id, row.player_id), 0)) for row in rows]
+
+
+def calculate_week(ledger: ContestLedger, league, week: int, penalty_store=None) -> list[Payout]:
     contest = contest_for_week(week)
     required = set(contest.weeks_required()) if contest else set()
     required.add(week)
-    sync_weeks(ledger, league, sorted(required))
+    sync_weeks(ledger, league, sorted(required), force=True)
 
-    weeks = {source: ledger.load_week(source) for source in sorted(required)}
+    weeks = {
+        source: adjusted_player_weeks(ledger.load_week(source), penalty_store, source) for source in sorted(required)
+    }
     high_scorers = high_scoring_teams(weeks.get(week, []))
 
     side_winners: list[Winner] = []
@@ -669,8 +684,10 @@ def calculate_week(ledger: ContestLedger, league, week: int) -> list[Payout]:
     return build_payouts(contest, high_scorers, side_winners, week)
 
 
-def settle_week(ledger: ContestLedger, league, week: int, settled_by: int | None = None) -> list[Payout]:
-    payouts = calculate_week(ledger, league, week)
+def settle_week(
+    ledger: ContestLedger, league, week: int, settled_by: int | None = None, penalty_store=None
+) -> list[Payout]:
+    payouts = calculate_week(ledger, league, week, penalty_store=penalty_store)
     ledger.save_payouts(week, payouts, settled_by=settled_by)
     return payouts
 
@@ -698,20 +715,22 @@ class ContestService:
         league_year: int,
         admin_ids=frozenset(),
         timezone: ZoneInfo | None = None,
+        penalty_store=None,
     ):
         self.league = league
         self.database_path = Path(database_path)
         self.league_year = league_year
         self.admin_ids = frozenset(admin_ids)
         self.timezone = timezone or ZoneInfo("America/Chicago")
+        self.penalty_store = penalty_store
 
     @classmethod
-    def from_environment(cls, league, database_path: str | Path):
+    def from_environment(cls, league, database_path: str | Path, penalty_store=None):
         raw_admins = os.getenv("CONTEST_ADMIN_IDS", "")
         admin_ids = {int(part) for part in raw_admins.replace(",", " ").split() if part.strip().isdigit()}
         league_year = int(os.getenv("LEAGUE_YEAR", str(datetime.now(UTC).year)))
         timezone = ZoneInfo(os.getenv("CONTEST_TIMEZONE", "America/Chicago"))
-        return cls(league, database_path, league_year, admin_ids, timezone)
+        return cls(league, database_path, league_year, admin_ids, timezone, penalty_store=penalty_store)
 
     def is_admin(self, user_id: int) -> bool:
         return not self.admin_ids or user_id in self.admin_ids
@@ -727,24 +746,26 @@ class ContestService:
         current = self.current_week()
         return max(1, current - 1) if local_now.weekday() in {1, 2} else current
 
-    def report(self, now: datetime | None = None) -> str:
+    def refresh_league(self):
         refresh = getattr(self.league, "refresh", None)
         if callable(refresh):
             refresh()
 
+    def report(self, now: datetime | None = None) -> str:
+        self.refresh_league()
         current = self.current_week()
         target = self.display_week(now)
         completed_through = current - 1
         with self.ledger() as ledger:
             for week in range(1, completed_through + 1):
                 if not ledger.is_settled(week):
-                    settle_week(ledger, self.league, week)
+                    settle_week(ledger, self.league, week, penalty_store=self.penalty_store)
 
             is_final = target <= completed_through
             if is_final:
                 payouts = ledger.week_payouts(target)
             else:
-                payouts = calculate_week(ledger, self.league, target)
+                payouts = calculate_week(ledger, self.league, target, penalty_store=self.penalty_store)
 
             sections = [
                 format_week(target, payouts, contest_for_week(target), status="Final" if is_final else "Pending"),

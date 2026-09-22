@@ -17,6 +17,7 @@ from utils.contest import (
     split_pot,
 )
 from utils.contest_schedule import SCHEDULE, Contest, contest_for_week
+from utils.penalties import Penalty, PenaltyStore
 
 
 def row(
@@ -316,6 +317,115 @@ class FakeLeague:
         ]
 
 
+def test_contest_settlement_uses_adjusted_scores_and_replaces_results(tmp_path):
+    league = FakeLeague()
+    path = tmp_path / "league.db"
+    store = PenaltyStore(path, 123, 2026)
+    penalty = Penalty("game", "play", 0, 3, "Taunting", "Test flag", 1)
+    store.award(penalty, league.teams[1], SimpleNamespace(name="Beta Star"))
+    service = ContestService(league, path, 2026, timezone=ZoneInfo("UTC"), penalty_store=store)
+    now = datetime(2026, 9, 17, 12, tzinfo=UTC)
+
+    for _ in range(2):
+        rendered = service.report(now)
+        assert "High score:** Beta (35.00 points)" in rendered
+        assert "Opening Week Bang:** Beta (Beta Star scored 35.00)" in rendered
+        assert len(rendered) < 2000
+    with service.ledger() as ledger:
+        assert next(row.points for row in ledger.load_week(1) if row.player_id == 3) == 25
+
+    league.current_week = 2
+    final_now = datetime(2026, 9, 15, 12, tzinfo=UTC)
+    final = service.report(final_now)
+    # Explicitly settling again replaces the result with the latest adjusted winner.
+    store.award(
+        Penalty("game", "late", 0, 1, "Taunting", "Late flag", 1),
+        league.teams[0],
+        SimpleNamespace(name="Alpha Star"),
+    )
+    assert service.report(final_now) == final
+    with service.ledger() as ledger:
+        payouts = settle_week(ledger, league, 1, settled_by=42, penalty_store=store)
+    revised = format_week(1, payouts, contest_for_week(1), status="Final")
+    assert "High score:** Alpha (40.00 points)" in revised
+    assert "Award changes" not in revised
+    assert "Beta" not in revised
+    assert "High score:** Alpha (40.00 points)" in service.report(final_now)
+    assert "Alpha — $40.00" in service.season()
+    assert "Alpha,20.00" in service.export_csv()
+    with service.ledger() as ledger:
+        assert ledger.season_totals() == [("Alpha", 4000, 2)]
+        assert ledger.connection.execute("SELECT settled_by FROM contest_weeks WHERE week = 1").fetchone()[0] == 42
+
+
+def test_cumulative_contest_includes_bonuses_from_completed_weeks(tmp_path):
+    league = FakeLeague()
+    path = tmp_path / "league.db"
+    store = PenaltyStore(path, 123, 2026)
+    with ContestLedger(path, 2026) as ledger:
+        settle_week(ledger, league, 1, penalty_store=store)
+        for occurrence in range(3):
+            store.award(
+                Penalty("game", "play", occurrence, 3, "Taunting", "Test flag", 1),
+                league.teams[1],
+                SimpleNamespace(name="Beta Star"),
+            )
+        for _ in range(2):
+            payouts = contest.calculate_week(ledger, league, 4, penalty_store=store)
+            side = next(payout for payout in payouts if payout.category == contest.SIDE_CONTEST)
+            assert side.team_name == "Beta"
+            assert side.detail == "Beta Star scored 130.00 while started"
+        assert all(payout.team_name == "Alpha" for payout in ledger.week_payouts(1))
+
+
+def test_bonus_overlay_scopes_awards_and_preserves_stat_based_results(tmp_path):
+    path = tmp_path / "league.db"
+    store = PenaltyStore(path, 123, 2026)
+    owner = SimpleNamespace(team_id=1, team_name="Team 1")
+    player = SimpleNamespace(name="Player")
+    penalty = Penalty("game", "play", 0, 100, "Taunting", "Test flag", 2)
+    store.award(penalty, owner, player)
+    for league_id, season in [(456, 2026), (123, 2025)]:
+        PenaltyStore(path, league_id, season).award(penalty, owner, player)
+    rows = [
+        row(week=2, points=10, stats={"rushingYards": 50}, scoring={"213": 2}),
+        row(week=2, team_id=2, points=15, stats={"rushingYards": 70}, scoring={"213": 3}),
+    ]
+    adjusted = contest.adjusted_player_weeks(rows, store, 2)
+    assert [entry.points for entry in adjusted] == [20, 15]
+    assert [entry.points for entry in rows] == [10, 15]
+    assert contest.adjusted_player_weeks(rows, store, 3) == rows
+    ctx = context(adjusted, week=2)
+    assert contest.most_afc_points(ctx)[0].team_id == 1
+    assert contest.most_rushing_yards(ctx)[0].team_id == 2
+    assert contest.most_first_down_points(ctx)[0].team_id == 2
+
+
+def test_settlement_refreshes_historical_scores_for_cumulative_contest(tmp_path, monkeypatch):
+    league = FakeLeague()
+    league.current_week = 5
+    service = ContestService(league, tmp_path / "contest.db", 2026)
+    with service.ledger() as ledger:
+        payouts = settle_week(ledger, league, 4)
+    assert "Early Season Draft King:** Alpha" in format_week(4, payouts, contest_for_week(4))
+    original = league.box_scores
+
+    def corrected(week=None):
+        boxes = original(week)
+        if week == 1:
+            boxes[0].away_lineup[0].points = 55
+        return boxes
+
+    monkeypatch.setattr(league, "box_scores", corrected)
+    with service.ledger() as ledger:
+        payouts = settle_week(ledger, league, 4)
+    revised = format_week(4, payouts, contest_for_week(4))
+    assert "Early Season Draft King:** Beta (Beta Star scored 130.00 while started)" in revised
+    assert "Award changes" not in revised
+    with service.ledger() as ledger:
+        assert ledger.settled_weeks() == [4]
+
+
 def test_snapshot_week_captures_bench_and_lineup_slots():
     rows = snapshot_week(FakeLeague(), 1)
 
@@ -379,14 +489,14 @@ def test_unsettled_weeks_are_refetched_so_late_games_land(tmp_path):
         assert league.calls == [1, 1]
 
 
-def test_settled_weeks_are_not_refetched_from_espn(tmp_path):
+def test_settled_weeks_are_refetched_from_espn_to_detect_corrections(tmp_path):
     league = FakeLeague()
     with ContestLedger(tmp_path / "contest.db", 2026) as ledger:
         settle_week(ledger, league, 1)
         calls_after_first = len(league.calls)
         settle_week(ledger, league, 1)
 
-        assert len(league.calls) == calls_after_first
+        assert len(league.calls) == calls_after_first + 1
 
 
 def test_saved_payouts_read_back_with_the_high_score_first(tmp_path):

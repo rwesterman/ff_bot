@@ -14,8 +14,8 @@ The README and some supporting files still describe the project's older GroupMe,
   and `main()`; keep imports side-effect free for unit tests and utility scripts.
 - `utils/commands.py` — chat-independent fantasy-football calculations and text formatting. Most feature logic belongs here and should be tested with a fake league object.
 - `utils/contest.py` — weekly payout ledger for `/weeklycontests`: a cached ESPN snapshot per player-week, the
-  side-contest resolvers, tie-splitting, and season totals. Payouts are recorded once and read back from SQLite so
-  ESPN stat corrections cannot move money that was already awarded.
+  side-contest resolvers, tie-splitting, and season totals. The ledger tracks calculated awards, not actual payments.
+  Weekly reports automatically settle completed weeks using adjusted scores, without tracking previous winners.
 - `utils/contest_schedule.py` — the league's fourteen side contests as data, including which ESPN scoring period each
   one reads. Contest week and ESPN week diverge for Thanksgiving, so that mapping is explicit rather than inferred.
 - `utils/chat_history.py` — SQLite schema and idempotent, incremental Discord channel-history persistence.
@@ -81,7 +81,8 @@ Private ESPN leagues also require `ESPN_S2` and `SWID`. `main.py` adds missing b
 
 - Keep Discord transport concerns in `main.py` and league/query/formatting logic in `utils/commands.py`.
 - Store money as integer cents and split pots with `contest.split_pot`, which distributes the remainder so recorded
-  payouts always sum back to the pot. Pending results are recomputed from ESPN; final results come from the ledger.
+  payouts always sum back to the pot. Settlement uses fresh ESPN scores plus recorded penalty bonuses and replaces
+  the week's saved results; totals and exports read those results without recalculating previous weeks.
 - `/weeklycontests` reads up to fourteen ESPN weeks, so its handlers dispatch through `asyncio.to_thread` and open a
   short-lived SQLite connection per operation rather than sharing one across threads.
 - Preserve asynchronous `discord.py` handler behavior: await sends and edits, and keep messages within Discord's size limits. The waiver command currently emits batches of ten table rows for this reason.

@@ -245,14 +245,20 @@ def register_contest_commands(bot, contest_service):
     )
     async def weeklycontests(ctx):
         try:
-            await ctx.send(await asyncio.to_thread(contest_service.report))
+            for part in split_discord_message(await asyncio.to_thread(contest_service.report)):
+                await ctx.send(part)
         except Exception:
             logger.exception("Failed to retrieve weekly contest results")
             await ctx.send("I could not retrieve the weekly contest results. ESPN may be unavailable right now.")
 
     @weeklycontests.command(name="totals", brief="Season payout totals.")
     async def totals(ctx):
-        await ctx.send(await asyncio.to_thread(contest_service.season))
+        try:
+            for part in split_discord_message(await asyncio.to_thread(contest_service.season)):
+                await ctx.send(part)
+        except Exception:
+            logger.exception("Failed to refresh contest totals")
+            await ctx.send("I could not refresh the contest totals. ESPN may be unavailable right now.")
 
     @weeklycontests.command(name="penalty", brief="Log taunting/unsportsmanlike penalties for week 13.")
     async def penalty(ctx, week: int, team: str, count: int, *, player: str):
@@ -263,9 +269,18 @@ def register_contest_commands(bot, contest_service):
 
     @weeklycontests.command(name="export", brief="Download the payout ledger as CSV.")
     async def export(ctx):
-        payload = await asyncio.to_thread(contest_service.export_csv)
-        attachment = discord.File(io.BytesIO(payload.encode()), filename=f"payouts-{contest_service.league_year}.csv")
-        await ctx.send("Full payout ledger attached.", file=attachment)
+        try:
+            payload = await asyncio.to_thread(contest_service.export_csv)
+            attachment = discord.File(
+                io.BytesIO(payload.encode()), filename=f"payouts-{contest_service.league_year}.csv"
+            )
+            await ctx.send(
+                "Calculated awards attached.",
+                file=attachment,
+            )
+        except Exception:
+            logger.exception("Failed to refresh contest export")
+            await ctx.send("I could not refresh the contest export. ESPN may be unavailable right now.")
 
     @weeklycontests.error
     @penalty.error
@@ -361,7 +376,9 @@ def create_application():
     else:
         logger.warning("Penalty polling is disabled: set PENALTY_CHANNEL_ID")
 
-    register_contest_commands(bot, ContestService.from_environment(league, league_database_path))
+    register_contest_commands(
+        bot, ContestService.from_environment(league, league_database_path, penalty_store=penalty_store)
+    )
     try:
         rag_service = HistoryRagService.from_environment(chat_database_path)
     except RuntimeError as error:
