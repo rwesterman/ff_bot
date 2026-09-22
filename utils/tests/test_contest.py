@@ -249,10 +249,10 @@ def test_waiver_pickup_excludes_anyone_rostered_in_week_one():
 
 
 def test_penalty_contest_applies_the_ten_point_house_rule():
-    winners = contest.manual_penalties(context([row()], penalties={1: ("Team 1", 3), 2: ("Team 2", 1)}))
+    winners = contest.most_penalty_adjustments(context([row()], penalties={1: ("Team 1", 3), 2: ("Team 2", 1)}))
 
     assert [winner.team_id for winner in winners] == [1]
-    assert winners[0].detail == "30 penalty points"
+    assert winners[0].detail == "3 +10 adjustments (30 penalty points)"
 
 
 def test_every_scheduled_contest_has_a_resolver():
@@ -432,6 +432,67 @@ def test_snapshot_week_captures_bench_and_lineup_slots():
     assert len(rows) == 3
     assert {row_.slot_position for row_ in rows} == {"RB/WR/TE", "BE"}
     assert sum(1 for row_ in rows if row_.started) == 2
+
+
+def test_week_13_uses_recorded_adjustments_and_splits_ties(tmp_path):
+    league = FakeLeague()
+    path = tmp_path / "league.db"
+    store = PenaltyStore(path, 123, 2026)
+    player = SimpleNamespace(name="Former Player")
+    # Ownership is taken from each award, even if the player later moves or leaves the roster.
+    for index, (week, owner) in enumerate([(1, 0), (13, 0), (2, 1), (12, 1)]):
+        flag = Penalty("game", str(index), 0, 999, "Taunting", "Test flag", week)
+        assert store.award(flag, league.teams[owner], player)
+        assert not store.award(flag, league.teams[owner], player)
+    store.award(Penalty("game", "late", 0, 999, "Taunting", "Test flag", 14), league.teams[0], player)
+    for league_id, season in [(456, 2026), (123, 2025)]:
+        PenaltyStore(path, league_id, season).award(
+            Penalty("game", "other", 0, 999, "Taunting", "Test flag", 1), league.teams[0], player
+        )
+    with ContestLedger(path, 2026) as ledger:
+        ledger.record_penalty(1, 1, "Alpha", "Manual Player", 99)
+        for _ in range(2):
+            payouts = settle_week(ledger, league, 13, penalty_store=store)
+            side = [p for p in payouts if p.category == contest.SIDE_CONTEST]
+            assert [(p.team_name, p.amount_cents) for p in side] == [("Alpha", 1000), ("Beta", 1000)]
+            assert all(p.detail == "2 +10 adjustments (20 penalty points)" for p in side)
+        rendered = format_week(13, payouts, contest_for_week(13))
+        assert "Penalty Pope" in rendered
+        assert "starting offensive players, including K" in rendered
+        assert len(rendered) < 2000
+
+
+def test_week_13_combines_renamed_team_awards_by_id_and_displays_current_name(tmp_path):
+    league = FakeLeague()
+    path = tmp_path / "league.db"
+    store = PenaltyStore(path, 123, 2026)
+    owner = league.teams[0]
+    player = SimpleNamespace(name="Player")
+    for week, name in [(1, "Z Old Name"), (2, "Another Old Name")]:
+        owner.team_name = name
+        store.award(Penalty("game", str(week), 0, 1, "Taunting", "Test flag", week), owner, player)
+    owner.team_name = "Current Name"
+    # A different team can even reuse the old name without sharing its awards.
+    league.teams[1].team_name = "Z Old Name"
+    store.award(Penalty("game", "other", 0, 3, "Taunting", "Test flag", 3), league.teams[1], player)
+    assert {team_id: count for team_id, (_, count) in store.adjustment_counts(13).items()} == {1: 2, 2: 1}
+    with ContestLedger(path, 2026) as ledger:
+        payouts = settle_week(ledger, league, 13, penalty_store=store)
+        side = [p for p in payouts if p.category == contest.SIDE_CONTEST]
+        assert len(side) == 1
+        assert (side[0].team_id, side[0].team_name) == (1, "Current Name")
+        assert side[0].detail == "2 +10 adjustments (20 penalty points)"
+
+
+def test_week_13_does_not_fall_back_to_manual_penalties(tmp_path):
+    league = FakeLeague()
+    path = tmp_path / "league.db"
+    store = PenaltyStore(path, 123, 2026)
+    with ContestLedger(path, 2026) as ledger:
+        ledger.record_penalty(1, 1, "Alpha", "Manual Player", 99)
+        for source in (None, store):
+            payouts = contest.calculate_week(ledger, league, 13, penalty_store=source)
+            assert [p.category for p in payouts] == [contest.HIGH_SCORE]
 
 
 def test_ledger_round_trips_a_week(tmp_path):

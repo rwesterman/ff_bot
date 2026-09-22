@@ -230,6 +230,19 @@ class PenaltyStore:
                 ).fetchall()
             )
 
+    def adjustment_counts(self, through_week):
+        """Count awarded +10 adjustments by their original owner through the contest week."""
+        with closing(self.connect()) as db:
+            rows = db.execute(
+                """
+                SELECT team_id, MAX(team_name), COUNT(*) FROM penalty_bonuses
+                WHERE league_id = ? AND season = ? AND week BETWEEN 1 AND ? AND points = 10
+                GROUP BY team_id
+                """,
+                (self.league_id, self.season, through_week),
+            )
+            return {row[0]: (row[1], row[2]) for row in rows}
+
     def for_week(self, week):
         with closing(self.connect()) as db:
             return db.execute(

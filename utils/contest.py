@@ -332,13 +332,17 @@ def best_thanksgiving_player(context: ResolutionContext) -> list[Winner]:
     return _winners_by_row(candidates, lambda value, row: f"{row.player_name} scored {value:.2f}")
 
 
-def manual_penalties(context: ResolutionContext) -> list[Winner]:
-    """Penalties are not fantasy stats, so this settles from counts logged during the season."""
+def most_penalty_adjustments(context: ResolutionContext) -> list[Winner]:
+    """Rank teams by awarded +10 adjustments, not separately logged penalty counts."""
     if not context.penalties:
         return []
     totals = {team_id: count * PENALTY_POINTS for team_id, (_, count) in context.penalties.items()}
     names = {team_id: name for team_id, (name, _) in context.penalties.items()}
-    return _winners_by_value(totals, names, lambda value: f"{value:.0f} penalty points")
+    # Historical award names may predate a rename; the refreshed roster supplies current labels.
+    names.update(_team_names(context.rows()))
+    return _winners_by_value(
+        totals, names, lambda value: f"{value / PENALTY_POINTS:.0f} +10 adjustments ({value:.0f} penalty points)"
+    )
 
 
 def best_waiver_pickup(context: ResolutionContext) -> list[Winner]:
@@ -365,7 +369,7 @@ RESOLVERS = {
     "most_rushing_yards": most_rushing_yards,
     "most_receptions": most_receptions,
     "best_thanksgiving_player": best_thanksgiving_player,
-    "manual_penalties": manual_penalties,
+    "most_penalty_adjustments": most_penalty_adjustments,
     "best_waiver_pickup": best_waiver_pickup,
 }
 
@@ -673,7 +677,11 @@ def calculate_week(ledger: ContestLedger, league, week: int, penalty_store=None)
             contest=contest,
             weeks=weeks,
             keepers=keepers_from_draft(league),
-            penalties=ledger.penalty_totals(),
+            penalties=(
+                penalty_store.adjustment_counts(contest.source_week())
+                if penalty_store is not None and contest.resolver == "most_penalty_adjustments"
+                else {}
+            ),
         )
         resolver = RESOLVERS.get(contest.resolver)
         if resolver is None:

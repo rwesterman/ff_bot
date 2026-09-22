@@ -159,7 +159,7 @@ SCHEDULE: tuple[Contest, ...] = (
             "Team whose starting offensive players, including K, committed the most Unsportsmanlike "
             "Conduct / Taunting penalties this season, at +10 pts per penalty (house rule)."
         ),
-        resolver="manual_penalties",
+        resolver="most_penalty_adjustments",
         lookback_to=1,
     ),
     Contest(
