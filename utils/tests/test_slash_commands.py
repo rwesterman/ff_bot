@@ -121,7 +121,7 @@ def dispatch(bot, request):
     asyncio.run(run())
 
 
-def test_every_command_is_registered_with_descriptions_and_typed_options(bot):
+def test_public_commands_are_registered_with_descriptions_and_typed_options(bot):
     payload = {item.name: item.to_dict(bot.tree) for item in bot.tree.get_commands()}
     assert set(payload) == {
         "help",
@@ -133,6 +133,7 @@ def test_every_command_is_registered_with_descriptions_and_typed_options(bot):
         "final",
         "projections",
         "standings",
+        "weeklycontest",
         "weeklycontests",
         "ask",
         "rules",
@@ -142,6 +143,7 @@ def test_every_command_is_registered_with_descriptions_and_typed_options(bot):
         assert item.description != "…"
     assert all(isinstance(command, (commands.HybridCommand, commands.HybridGroup)) for command in bot.walk_commands())
     assert payload["scores"]["options"] == []
+    assert payload["weeklycontest"]["options"] == []
     assert [(option["name"], option["type"], option["required"]) for option in payload["penalties"]["options"]] == [
         ("week", discord.AppCommandOptionType.integer.value, True)
     ]
@@ -150,16 +152,13 @@ def test_every_command_is_registered_with_descriptions_and_typed_options(bot):
             ("question", discord.AppCommandOptionType.string.value, True)
         ]
     contests = bot.tree.get_command("weeklycontests")
-    assert {command.name for command in contests.commands} == {"results", "totals", "penalty", "export"}
+    assert {command.name for command in contests.commands} == {"results", "totals"}
     assert contests.get_command("results").wrapped is bot.get_command("weeklycontests")
-    assert bot.get_command("weeklycontest") is bot.get_command("weeklycontests")
-    penalty_options = contests.get_command("penalty").to_dict(bot.tree)["options"]
-    assert [(option["name"], option["type"], option["required"]) for option in penalty_options] == [
-        ("week", 4, True),
-        ("team", 3, True),
-        ("count", 4, True),
-        ("player", 3, True),
-    ]
+    assert bot.get_command("weeklycontest") is not bot.get_command("weeklycontests")
+    assert bot.get_command("weeklycontests penalty") is None
+    export = bot.get_command("weeklycontests export")
+    assert export.hidden
+    assert export.app_command is None
 
 
 def test_startup_syncs_the_complete_global_tree(bot, caplog):
@@ -175,7 +174,7 @@ def test_startup_syncs_the_complete_global_tree(bot, caplog):
     with caplog.at_level(logging.INFO, logger="discord_bot"):
         asyncio.run(start())
     bot.http.bulk_upsert_global_commands.assert_awaited_once_with(123, payload=payload)
-    assert "Registered 12 global slash commands with Discord" in caplog.text
+    assert "Registered 13 global slash commands with Discord" in caplog.text
 
 
 def test_sync_failure_is_logged_and_stops_startup(bot, caplog):
@@ -211,24 +210,74 @@ def test_league_slash_commands_defer_before_reading_espn_and_send_scores(bot, se
     assert request.followup.send.await_args.kwargs["content"] == text
 
 
-def test_contest_results_subcommand_runs_report_and_respects_message_limits(bot, services):
+@pytest.mark.parametrize(
+    "name, options",
+    [("weeklycontest", []), ("weeklycontests", [{"name": "results", "type": 1}])],
+)
+def test_weekly_report_commands_run_report_and_respect_message_limits(bot, services, name, options):
     services.contests.report.return_value = "Result line\n" * 400
-    request = interaction(bot, "weeklycontests", options=[{"name": "results", "type": 1}])
+    request = interaction(bot, name, options=options)
     dispatch(bot, request)
+    request.response.defer.assert_awaited_once()
     services.contests.report.assert_called_once_with()
     messages = [call.kwargs["content"] for call in request.followup.send.await_args_list]
     assert len(messages) > 1
     assert all(0 < len(message) <= 2000 for message in messages)
 
 
-@pytest.mark.parametrize("subcommand, method", [("totals", "season"), ("export", "export_csv")])
-def test_contest_subcommands_dispatch_to_the_correct_service(bot, services, subcommand, method):
-    request = interaction(bot, "weeklycontests", options=[{"name": subcommand, "type": 1}])
+def test_contest_totals_dispatches_to_season_service(bot, services):
+    request = interaction(bot, "weeklycontests", options=[{"name": "totals", "type": 1}])
     dispatch(bot, request)
-    getattr(services.contests, method).assert_called_once_with()
+    services.contests.season.assert_called_once_with()
     request.followup.send.assert_awaited_once()
-    if subcommand == "export":
-        attachment = request.followup.send.await_args.kwargs["file"]
+
+
+@pytest.mark.parametrize(
+    "content, method",
+    [
+        ("/weeklycontest", "report"),
+        ("/weeklycontests", "report"),
+        ("/weeklycontests export", "export_csv"),
+    ],
+)
+def test_weekly_report_and_hidden_export_remain_callable_as_text_commands(bot, services, content, method):
+    request = interaction(bot, "weeklycontest")
+    message = discord.Message(
+        state=bot._connection,
+        channel=request.channel,
+        data={
+            "id": str(request.id),
+            "content": content,
+            "type": 0,
+            "flags": 0,
+            "reactions": [],
+            "embeds": [],
+            "mention_everyone": False,
+            "tts": False,
+            "pinned": False,
+            "edited_timestamp": None,
+            "mentions": [],
+            "mention_roles": [],
+            "attachments": [],
+        },
+    )
+    message.author = request.user
+
+    async def run():
+        await bot._async_setup_hook()
+        ctx = await bot.get_context(message)
+        ctx.send = AsyncMock()
+        await bot.invoke(ctx)
+        assert not ctx.command_failed
+        await bot.close()
+        return ctx
+
+    ctx = asyncio.run(run())
+    getattr(services.contests, method).assert_called_once_with()
+    ctx.send.assert_awaited_once()
+    if method == "export_csv":
+        assert ctx.command.qualified_name == "weeklycontests export"
+        attachment = ctx.send.await_args.kwargs["file"]
         assert attachment.filename == "payouts-2026.csv"
         assert attachment.fp.getvalue() == b"team,cents\nTeam One,2000\n"
 
@@ -272,8 +321,11 @@ def test_slash_help_lists_group_fallback_and_keeps_output_within_limit(bot):
     messages = [call.kwargs["content"] for call in request.followup.send.await_args_list]
     text = "\n".join(messages)
     assert "`/scores`" in text
+    assert "`/weeklycontest`" in text
     assert "`/weeklycontests results`" in text
     assert "`/penalties <week>`" in text
+    assert "/weeklycontests export" not in text
+    assert "/weeklycontests penalty" not in text
     assert all(len(message) <= 2000 for message in messages)
 
 

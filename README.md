@@ -222,8 +222,6 @@ uv sync --frozen
 - `RULES_GITHUB_REF`: Branch containing the current rules (defaults to `main`).
 - `RULES_GITHUB_TOKEN`: Fine-grained GitHub token with read-only access to repository contents. Required for a private
   rules repository and configured as a Fly secret.
-- `CONTEST_ADMIN_IDS`: Comma-separated Discord user IDs allowed to log penalties with `/weeklycontests`. When unset,
-  any user may log penalties.
 - `CONTEST_TIMEZONE`: Timezone used to choose the displayed contest week (defaults to `America/Chicago`).
 
 ### Running with Docker
@@ -253,16 +251,18 @@ DISCORD_BOT_TOKEN=... LEAGUE_ID=... LEAGUE_YEAR=... uv run --frozen python main.
 
 ### Discord slash commands
 
-The bot registers its enabled commands globally with Discord on startup using
+The bot registers its public commands globally with Discord on startup using
 [discord.py hybrid commands](https://discordpy.readthedocs.io/en/stable/ext/commands/commands.html#hybrid-commands).
 They appear in Discord's `/` command picker, and the existing text commands continue to work.
 
 Available commands include `/scores`, `/matchups`, `/final`, `/projections`, `/standings`, `/waivers`, `/penalties`,
-`/mock`, `/help`, and the `/weeklycontests` subcommands. `/ask` and `/rules` are registered when their services are
-configured. Use `/help` to see the enabled commands and their arguments.
+`/mock`, `/help`, `/weeklycontest`, and the public `/weeklycontests` subcommands. `/ask` and `/rules` are registered when
+their services are configured. Use `/help` to see the enabled commands and their arguments.
 
-For the weekly report, select `/weeklycontests results`. Discord requires a subcommand for groups; the text command
-`/weeklycontests` still runs the same report, and `weeklycontest` remains a text-only alias.
+For the weekly report, select `/weeklycontest` with no arguments. It shows the current week's pending results Thursday
+through Monday, or finalizes and shows the previous week Tuesday and Wednesday. `/weeklycontests results` and the text
+command `/weeklycontests` run the same report. `/weeklycontests export` remains a hidden text command and is excluded from
+the slash-command picker and `/help`.
 
 After deploying a command change, restart the bot and look for `Registered ... global slash commands with Discord`
 in its logs. Registration errors are logged and stop startup. If the picker still does not show the commands, reload
@@ -331,26 +331,22 @@ Every week pays two $20 pots: one to the highest-scoring lineup, and one to that
 contests live in `utils/contest_schedule.py`.
 
 ```
-/weeklycontests results      # relevant week's results and the season totals
+/weeklycontest              # relevant week's results and the season totals
 /weeklycontests totals       # season totals alone
-/weeklycontests export       # the whole final-results ledger as a CSV attachment
+/weeklycontests export       # hidden text command: the whole final-results ledger as a CSV attachment
 ```
 
 Weekly contest and penalty bonus records use `LEAGUE_DB` (default `data/league.db`; production `/data/league.db`).
 Chat/RAG and rules indexes continue to use `CHAT_HISTORY_DB`. No old records are migrated automatically. To rebuild
-completed weeks in a fresh league database, run `/weeklycontests` in Discord.
+completed weeks in a fresh league database, run `/weeklycontest` in Discord.
 
 The command refreshes ESPN automatically. Thursday through Monday it shows the current week's live leaders as pending.
 Tuesday and Wednesday it shows the prior week's final results and the upcoming challenge. Completed weeks are
 automatically written to SQLite, so later reads do not move money after a payout was finalized. When several teams tie,
 the pot splits evenly and the odd cents are distributed, so the recorded payouts always add back to exactly $20.
 
-Two contests need input the ESPN API does not carry. Week 13 counts taunting and unsportsmanlike penalties, logged as
-they happen:
-
-```
-/weeklycontests penalty 13 "Team Name" 1 Player Name
-```
+Week 13 uses the recorded automatic +10 adjustments for taunting and unsportsmanlike penalties. Use `/penalties <week>`
+to refresh and view those adjustments; the manual `/weeklycontests penalty` command has been removed.
 
 Week 8 pays the best keeper and reads ESPN's keeper flags directly. A team that designated no keeper is not eligible
 that week.

@@ -285,24 +285,26 @@ def register_rules_command(bot, rules_service):
 
 
 def register_contest_commands(bot, contest_service):
-    async def deny_non_admin(ctx):
-        await ctx.send("Only the league treasurer can change the payout ledger.")
-        logger.info("Rejected contest write from %s", ctx.author.id)
-
-    @bot.hybrid_group(
-        name="weeklycontests",
-        aliases=["weeklycontest"],
-        fallback="results",
-        invoke_without_command=True,
-        brief="Current weekly results and season totals.",
-    )
-    async def weeklycontests(ctx):
+    async def send_weekly_report(ctx):
         try:
             for part in split_discord_message(await asyncio.to_thread(contest_service.report)):
                 await ctx.send(part)
         except Exception:
             logger.exception("Failed to retrieve weekly contest results")
             await ctx.send("I could not retrieve the weekly contest results. ESPN may be unavailable right now.")
+
+    @bot.hybrid_command(name="weeklycontest", brief="Current weekly results and season totals.")
+    async def weeklycontest(ctx):
+        await send_weekly_report(ctx)
+
+    @bot.hybrid_group(
+        name="weeklycontests",
+        fallback="results",
+        invoke_without_command=True,
+        brief="Current weekly results and season totals.",
+    )
+    async def weeklycontests(ctx):
+        await send_weekly_report(ctx)
 
     @weeklycontests.command(name="totals", brief="Season payout totals.")
     async def totals(ctx):
@@ -313,17 +315,9 @@ def register_contest_commands(bot, contest_service):
             logger.exception("Failed to refresh contest totals")
             await ctx.send("I could not refresh the contest totals. ESPN may be unavailable right now.")
 
-    @weeklycontests.command(name="penalty", brief="Legacy command; Week 13 now uses automatic penalty adjustments.")
-    async def penalty(ctx, week: int, team: str, count: int, *, player: str):
-        if not contest_service.is_admin(ctx.author.id):
-            await deny_non_admin(ctx)
-            return
-        await ctx.send(
-            "Penalty Pope now uses the recorded +10 adjustments automatically; manual logging is no longer needed. "
-            "Use `/penalties <week>` to refresh and view that week's recorded adjustments."
-        )
-
-    @weeklycontests.command(name="export", brief="Download the payout ledger as CSV.")
+    @weeklycontests.command(
+        name="export", brief="Download the payout ledger as CSV.", hidden=True, with_app_command=False
+    )
     async def export(ctx):
         try:
             payload = await asyncio.to_thread(contest_service.export_csv)
@@ -337,16 +331,6 @@ def register_contest_commands(bot, contest_service):
         except Exception:
             logger.exception("Failed to refresh contest export")
             await ctx.send("I could not refresh the contest export. ESPN may be unavailable right now.")
-
-    @weeklycontests.error
-    @penalty.error
-    async def contest_error(ctx, error):
-        if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send("Usage: `/weeklycontests penalty <week> <team> <count> <player>`")
-        elif isinstance(error, commands.BadArgument):
-            await ctx.send("That does not look like a week number.")
-        else:
-            logger.error("Error with weeklycontests command: %s", error)
 
 
 def configure_history_refresh(bot, rag_service):
