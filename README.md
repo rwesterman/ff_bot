@@ -251,6 +251,24 @@ and rollback instructions are documented in [`deploy/README.md`](deploy/README.m
 DISCORD_BOT_TOKEN=... LEAGUE_ID=... LEAGUE_YEAR=... uv run --frozen python main.py
 ```
 
+### Discord slash commands
+
+The bot registers its enabled commands globally with Discord on startup using
+[discord.py hybrid commands](https://discordpy.readthedocs.io/en/stable/ext/commands/commands.html#hybrid-commands).
+They appear in Discord's `/` command picker, and the existing text commands continue to work.
+
+Available commands include `/scores`, `/matchups`, `/final`, `/projections`, `/standings`, `/waivers`, `/penalties`,
+`/mock`, `/help`, and the `/weeklycontests` subcommands. `/ask` and `/rules` are registered when their services are
+configured. Use `/help` to see the enabled commands and their arguments.
+
+For the weekly report, select `/weeklycontests results`. Discord requires a subcommand for groups; the text command
+`/weeklycontests` still runs the same report, and `weeklycontest` remains a text-only alias.
+
+After deploying a command change, restart the bot and look for `Registered ... global slash commands with Discord`
+in its logs. Registration errors are logged and stop startup. If the picker still does not show the commands, reload
+Discord and check the server's integration permissions. The bot installation needs the
+[`applications.commands` scope](https://docs.discord.com/developers/interactions/application-commands#authorizing-your-application).
+
 ### Caching Discord history
 
 The history sync connects to Discord without sending messages and stores every readable text-channel, thread, and
@@ -313,7 +331,7 @@ Every week pays two $20 pots: one to the highest-scoring lineup, and one to that
 contests live in `utils/contest_schedule.py`.
 
 ```
-/weeklycontests              # relevant week's results and the season totals
+/weeklycontests results      # relevant week's results and the season totals
 /weeklycontests totals       # season totals alone
 /weeklycontests export       # the whole final-results ledger as a CSV attachment
 ```

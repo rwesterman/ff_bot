@@ -39,14 +39,62 @@ def initialize_league():
     return League(league_id, year, espn_s2, swid)
 
 
+class FantasyBot(commands.Bot):
+    async def setup_hook(self):
+        try:
+            registered = await self.tree.sync()
+        except discord.HTTPException:
+            logger.exception("Could not register slash commands with Discord")
+            raise
+        logger.info("Registered %d global slash commands with Discord", len(registered))
+
+
 def initialize_bot():
     intents = discord.Intents.default()
     intents.message_content = True
-    return commands.Bot(command_prefix="/", intents=intents)
+    bot = FantasyBot(command_prefix="/", intents=intents, help_command=None)
+
+    @bot.before_invoke
+    async def defer_slash_command(ctx):
+        # Acknowledge interactions before ESPN, history, or rules requests can exceed Discord's deadline.
+        if ctx.interaction is not None and not ctx.interaction.response.is_done():
+            await ctx.defer()
+
+    register_help_command(bot)
+    return bot
+
+
+def register_help_command(bot):
+    @bot.hybrid_command(name="help", brief="List available commands or show help for one command.")
+    async def help_command(ctx, *, command: str = ""):
+        available = sorted(
+            (item for item in bot.tree.walk_commands() if isinstance(item, discord.app_commands.Command)),
+            key=lambda item: item.qualified_name,
+        )
+        if command:
+            name = command.lstrip("/").strip()
+            text_command = bot.get_command(name)
+            if text_command is not None:
+                name = text_command.qualified_name
+            available = [
+                item for item in available if item.qualified_name == name or item.qualified_name.startswith(f"{name} ")
+            ]
+        if not available:
+            await ctx.send("Unknown command. Use `/help` to see the available commands.")
+            return
+        lines = ["Available commands:"]
+        for item in available:
+            arguments = " ".join(
+                f"<{parameter.name}>" if parameter.required else f"[{parameter.name}]" for parameter in item.parameters
+            )
+            usage = f"/{item.qualified_name} {arguments}".rstrip()
+            lines.append(f"`{usage}` — {item.description}")
+        for part in split_discord_message("\n".join(lines)):
+            await ctx.send(part)
 
 
 def register_league_commands(bot, commander):
-    @bot.command(name="penalties", brief="Refresh a week's penalty bonuses silently and show the results.")
+    @bot.hybrid_command(name="penalties", brief="Refresh a week's penalty bonuses silently and show the results.")
     async def penalties(ctx, week: int):
         if not 1 <= week <= 18:
             await ctx.send("Week must be between 1 and 18. Usage: `/penalties <week>`")
@@ -68,7 +116,7 @@ def register_league_commands(bot, commander):
             logger.error("Penalty command failed: %s", error)
             await ctx.send("I could not show the logged penalties. Please try again later.")
 
-    @bot.command(name="waivers", brief="Show recent waiver activity.")
+    @bot.hybrid_command(name="waivers", brief="Show recent waiver activity.")
     async def waivers(ctx):
         sort_by_bid = True
         activity_size = 10
@@ -92,15 +140,19 @@ def register_league_commands(bot, commander):
         if isinstance(error, HTTPError):
             await ctx.send("Sorry, the message output was too long.")
 
-    @bot.command(name="mock", brief="Mock the previous message.")
+    @bot.hybrid_command(name="mock", brief="Mock the previous message.")
     async def mock(ctx):
         messages = [message async for message in ctx.channel.history(limit=10) if not message.author.bot]
-        if len(messages) > 1:
-            mocked_message = messages[1]
+        # A slash invocation does not add a user message to channel history.
+        previous_index = 0 if ctx.interaction is not None else 1
+        if len(messages) > previous_index:
+            mocked_message = messages[previous_index]
             mock_text = commander.mock_user(mocked_message.content)
             await ctx.send(mock_text, reference=mocked_message)
+        else:
+            await ctx.send("There is no previous message to mock.")
 
-    @bot.command(name="matchups", brief="Sends the matchups for the current week")
+    @bot.hybrid_command(name="matchups", brief="Sends the matchups for the current week")
     async def matchups(ctx):
         try:
             await ctx.send(commander.get_matchups())
@@ -109,7 +161,7 @@ def register_league_commands(bot, commander):
                 "Could not retrieve matchups. This could be due to the ESPN API failing to return season data."
             )
 
-    @bot.command(name="scores", brief="Sends the scores for the current week")
+    @bot.hybrid_command(name="scores", brief="Sends the scores for the current week")
     async def scores(ctx):
         try:
             await ctx.send(commander.get_scoreboard_short())
@@ -118,7 +170,7 @@ def register_league_commands(bot, commander):
                 "Could not retrieve scores. This could be due to the ESPN API failing to return season data."
             )
 
-    @bot.command(name="final", brief="Final scores for the previous week")
+    @bot.hybrid_command(name="final", brief="Final scores for the previous week")
     async def final(ctx):
         try:
             await ctx.send(commander.get_final())
@@ -127,7 +179,7 @@ def register_league_commands(bot, commander):
                 "Could not retrieve final scores. This could be due to the ESPN API failing to return season data."
             )
 
-    @bot.command(name="projections", brief="Projected scores for the current week")
+    @bot.hybrid_command(name="projections", brief="Projected scores for the current week")
     async def projections(ctx):
         try:
             await ctx.send(commander.get_projected_scoreboard())
@@ -136,7 +188,7 @@ def register_league_commands(bot, commander):
                 "Could not retrieve projections. This could be due to the ESPN API failing to return season data."
             )
 
-    @bot.command(name="standings", brief="Current league standings with top-half scoring wins added.")
+    @bot.hybrid_command(name="standings", brief="Current league standings with top-half scoring wins added.")
     async def standings(ctx):
         try:
             message = await ctx.send("Calculating standings...")
@@ -148,7 +200,7 @@ def register_league_commands(bot, commander):
 
 
 def register_rag_commands(bot, rag_service):
-    @bot.command(name="ask", brief="Ask a question about league chat history.")
+    @bot.hybrid_command(name="ask", brief="Ask a question about league chat history.")
     @commands.cooldown(rate=1, per=30, type=commands.BucketType.user)
     async def ask(ctx, *, question: str):
         if ctx.guild is None:
@@ -192,7 +244,7 @@ def register_rag_commands(bot, rag_service):
 
 
 def register_rules_command(bot, rules_service):
-    @bot.command(name="rules", brief="Answer a question using the current league rules.")
+    @bot.hybrid_command(name="rules", brief="Answer a question using the current league rules.")
     @commands.cooldown(rate=1, per=15, type=commands.BucketType.user)
     async def rules(ctx, *, question: str):
         if ctx.guild is None:
@@ -237,9 +289,10 @@ def register_contest_commands(bot, contest_service):
         await ctx.send("Only the league treasurer can change the payout ledger.")
         logger.info("Rejected contest write from %s", ctx.author.id)
 
-    @bot.group(
+    @bot.hybrid_group(
         name="weeklycontests",
         aliases=["weeklycontest"],
+        fallback="results",
         invoke_without_command=True,
         brief="Current weekly results and season totals.",
     )
